@@ -338,6 +338,60 @@ app.controller('listWebsites', function ($scope, $http) {
 
 
     };
+
+    $scope.cyberPanelLoading = true;
+
+    $scope.searchWebsites = function () {
+
+        $scope.cyberPanelLoading = false;
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+        var data = {
+            patternAdded: $scope.patternAdded
+        };
+
+        dataurl = "/websites/searchWebsites";
+
+        $http.post(dataurl, data, config).then(ListInitialData, cantLoadInitialData);
+
+
+        function ListInitialData(response) {
+            $scope.cyberPanelLoading = true;
+            if (response.data.listWebSiteStatus === 1) {
+
+                var finalData = JSON.parse(response.data.data);
+                $scope.WebSitesList = finalData;
+                $("#listFail").hide();
+            }
+            else {
+                new PNotify({
+                    title: 'Operation Failed!',
+                    text: response.data.error_message,
+                    type: 'error'
+                });
+
+            }
+        }
+
+        function cantLoadInitialData(response) {
+            $scope.cyberPanelLoading = true;
+            new PNotify({
+                    title: 'Operation Failed!',
+                    text: 'Connect disrupted, refresh the page.',
+                    type: 'error'
+                });
+        }
+
+
+    };
+
+
+
 });
 
 /* Java script code to list accounts ends here */
@@ -2333,6 +2387,38 @@ app.controller('websitePages', function ($scope, $http, $timeout, $window) {
         }
 
     }
+
+
+    // REWRITE Template
+
+    const httpToHTTPS = `### Rewrite Rules Added by CyberPanel Rewrite Rule Generator
+
+RewriteEngine On
+RewriteCond %{HTTPS}  !=on
+RewriteRule ^/?(.*) https://%{SERVER_NAME}/$1 [R,L]
+
+### End CyberPanel Generated Rules.
+
+`;
+
+    const nonWWWToWWW = `### Rewrite Rules Added by CyberPanel Rewrite Rule Generator
+
+RewriteEngine On
+RewriteCond %{HTTP_HOST} !^www\. [NC]
+RewriteRule ^(.*)$ http://www.%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+### End CyberPanel Generated Rules.
+
+`;
+
+    $scope.applyRewriteTemplate = function () {
+
+      if($scope.rewriteTemplate === "Force HTTP -> HTTPS"){
+          $scope.rewriteRules = httpToHTTPS + $scope.rewriteRules;
+      }else if($scope.rewriteTemplate === "Force NON-WWW -> WWW"){
+          $scope.rewriteRules = nonWWWToWWW + $scope.rewriteRules;
+      }
+    };
 
 
 });

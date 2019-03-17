@@ -24,6 +24,10 @@ class FileManager:
     def changeOwner(self,  path):
         domainName = self.data['domainName']
         website = Websites.objects.get(domain=domainName)
+
+        if path.find('..') > -1:
+            return self.ajaxPre(0, 'Not allowed to move in this path, please choose location inside home!')
+
         command = "sudo chown -R " + website.externalApp + ':' + website.externalApp + ' ' + self.returnPathEnclosed(path)
         ProcessUtilities.executioner(command)
 
@@ -40,18 +44,21 @@ class FileManager:
 
             counter = 0
             for items in output:
-                currentFile = items.split(' ')
-                currentFile = filter(lambda a: a != '', currentFile)
-                if currentFile[-1] == '.' or currentFile[-1] == '..' or currentFile[0] == 'total':
-                    continue
-                dirCheck = 0
-                if currentFile[0][0] == 'd':
-                    dirCheck = 1
+                try:
+                    currentFile = items.split(' ')
+                    currentFile = filter(lambda a: a != '', currentFile)
+                    if currentFile[-1] == '.' or currentFile[-1] == '..' or currentFile[0] == 'total':
+                        continue
+                    dirCheck = 0
+                    if currentFile[0][0] == 'd':
+                        dirCheck = 1
 
-                size = str(int(int(currentFile[4])/float(1024)))
-                lastModified = currentFile[5] + ' ' + currentFile[6] + ' ' + currentFile[7]
-                finalData[str(counter)] = [currentFile[-1], currentFile[-1], lastModified, size, currentFile[0], dirCheck]
-                counter = counter + 1
+                    size = str(int(int(currentFile[4])/float(1024)))
+                    lastModified = currentFile[5] + ' ' + currentFile[6] + ' ' + currentFile[7]
+                    finalData[str(counter)] = [currentFile[-1], currentFile[-1], lastModified, size, currentFile[0], dirCheck]
+                    counter = counter + 1
+                except:
+                    continue
 
             json_data = json.dumps(finalData)
             return HttpResponse(json_data)
@@ -69,18 +76,21 @@ class FileManager:
 
             counter = 0
             for items in output:
-                currentFile = items.split(' ')
-                currentFile = filter(lambda a: a != '', currentFile)
+                try:
+                    currentFile = items.split(' ')
+                    currentFile = filter(lambda a: a != '', currentFile)
 
-                if currentFile[-1] == '.' or currentFile[-1] == '..' or currentFile[0] == 'total':
+                    if currentFile[-1] == '.' or currentFile[-1] == '..' or currentFile[0] == 'total':
+                        continue
+
+                    dirCheck = False
+                    if currentFile[0][0] == 'd':
+                        dirCheck = True
+
+                    finalData[str(counter)] = [currentFile[-1], self.data['completeStartingPath'] + '/' + currentFile[-1], dirCheck]
+                    counter = counter + 1
+                except:
                     continue
-
-                dirCheck = False
-                if currentFile[0][0] == 'd':
-                    dirCheck = True
-
-                finalData[str(counter)] = [currentFile[-1], self.data['completeStartingPath'] + '/' + currentFile[-1], dirCheck]
-                counter = counter + 1
 
             json_data = json.dumps(finalData)
             return HttpResponse(json_data)
@@ -92,6 +102,9 @@ class FileManager:
         try:
             finalData = {}
             finalData['status'] = 1
+
+            if self.data['fileName'].find('..') > -1:
+                return self.ajaxPre(0, 'Not allowed to move in this path, please choose location inside home!')
 
             command = "sudo touch " + self.returnPathEnclosed(self.data['fileName'])
             ProcessUtilities.executioner(command)
@@ -188,6 +201,9 @@ class FileManager:
 
             finalData = {}
             finalData['status'] = 1
+
+            if self.data['newFileName'].find('..') > -1:
+                return self.ajaxPre(0, 'Not allowed to move in this path, please choose location inside home!')
 
 
             command = 'sudo mv ' + self.returnPathEnclosed(self.data['basePath'] + '/' + self.data['existingName']) + ' ' + self.returnPathEnclosed(self.data['basePath'] + '/' + self.data['newFileName'])
@@ -307,6 +323,28 @@ class FileManager:
             ProcessUtilities.executioner(command)
 
             self.changeOwner(self.data['compressedFileName'])
+
+            json_data = json.dumps(finalData)
+            return HttpResponse(json_data)
+
+        except BaseException, msg:
+            return self.ajaxPre(0, str(msg))
+
+    def changePermissions(self):
+        try:
+
+            finalData = {}
+            finalData['status'] = 1
+
+            if self.data['recursive'] == 1:
+                command = 'sudo chmod -R ' + self.data['newPermissions'] + ' ' + self.returnPathEnclosed(
+                    self.data['basePath'] + '/' + self.data['permissionsPath'])
+            else:
+                command = 'sudo chmod ' + self.data['newPermissions'] + ' ' + self.returnPathEnclosed(
+                    self.data['basePath'] + '/' + self.data['permissionsPath'])
+
+
+            ProcessUtilities.executioner(command)
 
             json_data = json.dumps(finalData)
             return HttpResponse(json_data)

@@ -145,6 +145,7 @@ class WebsiteManager:
                 return ACLManager.loadErrorJson('createWebSiteStatus', 0)
 
             domain = data['domainName']
+            #logging.CyberCPLogFileWriter.writeToFile(domain)
             adminEmail = data['adminEmail']
             phpSelection = data['phpSelection']
             packageName = data['package']
@@ -159,7 +160,7 @@ class WebsiteManager:
 
             ## Create Configurations
 
-            execPath = "sudo python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
+            execPath = "sudo /usr/local/CyberCP/bin/python2 " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
             execPath = execPath + " createVirtualHost --virtualHostName " + domain + \
                        " --administratorEmail " + adminEmail + " --phpVersion '" + phpSelection + \
                        "' --virtualHostUser " + externalApp + " --ssl " + str(data['ssl']) + " --dkimCheck " \
@@ -248,6 +249,25 @@ class WebsiteManager:
             final_dic = {'status': 0, 'fetchStatus': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
+
+    def searchWebsites(self, userID = None, data = None):
+        try:
+            currentACL = ACLManager.loadedACL(userID)
+            try:
+                json_data = self.searchWebsitesJson(currentACL, userID, data['patternAdded'])
+            except BaseException, msg:
+                tempData = {}
+                tempData['page'] = 1
+                return self.getFurtherAccounts(userID, tempData)
+
+            pagination = self.websitePagination(currentACL, userID)
+            final_dic = {'status': 1, 'listWebSiteStatus': 1, 'error_message': "None", "data": json_data, 'pagination': pagination}
+            final_json = json.dumps(final_dic)
+            return HttpResponse(final_json)
+        except BaseException, msg:
+            dic = {'status': 1, 'listWebSiteStatus': 0, 'error_message': str(msg)}
+            json_data = json.dumps(dic)
+            return HttpResponse(json_data)
 
     def getFurtherAccounts(self, userID = None, data = None):
         try:
@@ -1758,10 +1778,30 @@ class WebsiteManager:
                 return render(request, 'websiteFunctions/setupGit.html',
                               {'domainName': self.domain, 'installed': 1, 'webhookURL': webhookURL})
             else:
-                command = "sudo ssh-keygen -f /root/.ssh/" + self.domain + " -t rsa -N ''"
+
+                command = "sudo ssh-keygen -f /root/.ssh/git -t rsa -N ''"
                 ProcessUtilities.executioner(command)
 
-                command = 'sudo cat /root/.ssh/' + self.domain + '.pub'
+                ###
+
+                configContent = """Host github.com
+    IdentityFile /root/.ssh/git
+Host gitlab.com
+    IdentityFile /root/.ssh/git
+"""
+
+                path = "/home/cyberpanel/config"
+                writeToFile = open(path, 'w')
+                writeToFile.writelines(configContent)
+                writeToFile.close()
+
+                command = 'sudo mv ' + path + ' /root/.ssh/config'
+                ProcessUtilities.executioner(command)
+
+                command = 'sudo chown root:root /root/.ssh/config'
+                ProcessUtilities.executioner(command)
+
+                command = 'sudo cat /root/.ssh/git.pub'
                 deploymentKey = subprocess.check_output(shlex.split(command)).strip('\n')
 
             return render(request, 'websiteFunctions/setupGit.html',
@@ -1998,6 +2038,40 @@ class WebsiteManager:
             data_ret = {'createWebSiteStatus': 0, 'error_message': str(msg), "existsStatus": 0}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
+
+    def searchWebsitesJson(self, currentlACL, userID, searchTerm):
+
+        websites = ACLManager.searchWebsiteObjects(currentlACL, userID, searchTerm)
+
+        json_data = "["
+        checker = 0
+
+        try:
+            ipFile = "/etc/cyberpanel/machineIP"
+            f = open(ipFile)
+            ipData = f.read()
+            ipAddress = ipData.split('\n', 1)[0]
+        except BaseException, msg:
+            logging.CyberCPLogFileWriter.writeToFile("Failed to read machine IP, error:" + str(msg))
+            ipAddress = "192.168.100.1"
+
+        for items in websites:
+            if items.state == 0:
+                state = "Suspended"
+            else:
+                state = "Active"
+            dic = {'domain': items.domain, 'adminEmail': items.adminEmail, 'ipAddress': ipAddress,
+                   'admin': items.admin.userName, 'package': items.package.packageName, 'state': state}
+
+            if checker == 0:
+                json_data = json_data + json.dumps(dic)
+                checker = 1
+            else:
+                json_data = json_data + ',' + json.dumps(dic)
+
+        json_data = json_data + ']'
+
+        return json_data
 
     def findWebsitesJson(self, currentACL, userID, pageNumber):
         finalPageNumber = ((pageNumber * 10)) - 10
