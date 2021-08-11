@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.shortcuts import render, redirect
 from django.http import HttpResponse
@@ -8,45 +7,55 @@ from loginSystem.views import loadLoginPage
 import json
 import subprocess
 import psutil
-import shlex
 import socket
 from plogical.acl import ACLManager
 import os
 from plogical.virtualHostUtilities import virtualHostUtilities
 import time
-import serverStatusUtil
+from . import serverStatusUtil
 from plogical.processUtilities import ProcessUtilities
 from plogical.httpProc import httpProc
-
+from plogical.installUtilities import installUtilities
 
 # Create your views here.
 
-def serverStatusHome(request):
-    try:
-        userID = request.session['userID']
-        return render(request, 'serverStatus/index.html')
-    except KeyError:
-        return redirect(loadLoginPage)
+NOTHING = 0
+BUNDLE = 2
+EXPIRE = 3
 
+### Version
+
+VERSION = '2.1'
+BUILD = 1
+
+def serverStatusHome(request):
+    proc = httpProc(request, 'serverStatus/index.html',
+                    None, 'admin')
+    return proc.render()
 
 def litespeedStatus(request):
     try:
         userID = request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
-
-        if currentACL['admin'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
 
         processList = ProcessUtilities.getLitespeedProcessNumber()
 
         OLS = 0
         if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
             OLS = 1
+
+        message = 0
+
+        if request.META['QUERY_STRING'] == 'bundle':
+            message = ''
+            message = BUNDLE
+        elif request.META['QUERY_STRING'] == 'expire':
+            message = 'It looks like your license has expired. Kindly renew your license.'
+            message = EXPIRE
+        else:
+            message = NOTHING
         try:
 
-            versionInformation = subprocess.check_output(["/usr/local/lsws/bin/lshttpd", "-v"]).split("\n")
+            versionInformation = ProcessUtilities.outputExecutioner(["/usr/local/lsws/bin/lshttpd", "-v"]).split("\n")
             lsversion = versionInformation[0]
             modules = versionInformation[1]
 
@@ -60,25 +69,27 @@ def litespeedStatus(request):
                 else:
                     loadedModules.append(items)
 
-        except subprocess.CalledProcessError, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + "[litespeedStatus]")
-            return render(request, "serverStatus/litespeedStatus.html", {"processList": processList,
-                                                                         "liteSpeedVersionStatus": "For some reaons not able to load version details, see CyberCP main log file.",
-                                                                         'OLS': OLS})
-
+            proc = httpProc(request, 'serverStatus/litespeedStatus.html',
+                            {"processList": processList,
+                             "liteSpeedVersionStatus": "For some reaons not able to load version details, see CyberCP main log file.",
+                             'OLS': OLS, 'message': message}, 'admin')
+            return proc.render()
         if (processList != 0):
             dataForHtml = {"processList": processList, "lsversion": lsversion, "modules": modules,
-                           "loadedModules": loadedModules, 'OLS': OLS}
-            return render(request, "serverStatus/litespeedStatus.html", dataForHtml)
+                           "loadedModules": loadedModules, 'OLS': OLS, 'message': message}
+            proc = httpProc(request, 'serverStatus/litespeedStatus.html', dataForHtml, 'admin')
+            return proc.render()
         else:
             dataForHtml = {"lsversion": lsversion, "modules": modules,
-                           "loadedModules": loadedModules, 'OLS': OLS}
-            return render(request, "serverStatus/litespeedStatus.html", dataForHtml)
+                           "loadedModules": loadedModules, 'OLS': OLS, 'message': message}
+            proc = httpProc(request, 'serverStatus/litespeedStatus.html', dataForHtml, 'admin')
+            return proc.render()
 
-    except KeyError, msg:
+    except KeyError as msg:
         logging.CyberCPLogFileWriter.writeToFile(str(msg) + "[litespeedStatus]")
         return redirect(loadLoginPage)
-
 
 def stopOrRestartLitespeed(request):
     try:
@@ -96,12 +107,12 @@ def stopOrRestartLitespeed(request):
         reboot = data['reboot']
 
         if reboot == 1:
-            if ProcessUtilities.restartLitespeed() == 1:
+            if installUtilities.reStartLiteSpeedSocket() == 1:
                 status = {"reboot": 1, "shutdown": 0}
             else:
                 status = {"reboot": 0, "shutdown": 0, "error_message": "Please see CyberCP main log file."}
         else:
-            if ProcessUtilities.stopLitespeed() == 1:
+            if installUtilities.stopLiteSpeedSocket() == 1:
                 status = {"reboot": 0, "shutdown": 1}
             else:
                 status = {"reboot": 0, "shutdown": 0, "error_message": "Please see CyberCP main log file."}
@@ -109,28 +120,13 @@ def stopOrRestartLitespeed(request):
         final_json = json.dumps(status)
         return HttpResponse(final_json)
 
-    except KeyError, msg:
+    except KeyError as msg:
         logging.CyberCPLogFileWriter.writeToFile(str(msg) + "[stopOrRestartLitespeed]")
         return HttpResponse("Not Logged in as admin")
 
-
 def cyberCPMainLogFile(request):
-    try:
-        userID = request.session['userID']
-
-        currentACL = ACLManager.loadedACL(userID)
-
-        if currentACL['admin'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
-
-        return render(request, 'serverStatus/cybercpmainlogfile.html')
-
-    except KeyError, msg:
-        logging.CyberCPLogFileWriter.writeToFile(str(msg) + "[cyberCPMainLogFile]")
-        return redirect(loadLoginPage)
-
+    proc = httpProc(request, 'serverStatus/cybercpmainlogfile.html', None, 'admin')
+    return proc.render()
 
 def getFurtherDataFromLogFile(request):
     try:
@@ -143,19 +139,36 @@ def getFurtherDataFromLogFile(request):
             return ACLManager.loadErrorJson('logstatus', 0)
 
         fewLinesOfLogFile = logging.CyberCPLogFileWriter.readLastNFiles(50, logging.CyberCPLogFileWriter.fileName)
+
         fewLinesOfLogFile = str(fewLinesOfLogFile)
         status = {"logstatus": 1, "logsdata": fewLinesOfLogFile}
         final_json = json.dumps(status)
         return HttpResponse(final_json)
 
-    except KeyError, msg:
+    except KeyError as msg:
         status = {"logstatus": 0,
                   "error": "Could not fetch data from log file, please see CyberCP main log file through command line."}
         logging.CyberCPLogFileWriter.writeToFile(str(msg) + "[getFurtherDataFromLogFile]")
         return HttpResponse("Not Logged in as admin")
 
-
 def services(request):
+    data = {}
+
+    if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+        data['serverName'] = 'OpenLiteSpeed'
+    else:
+        data['serverName'] = 'LiteSpeed Ent'
+
+    dockerInstallPath = '/usr/bin/docker'
+    if not os.path.exists(dockerInstallPath):
+        data['isDocker'] = False
+    else:
+        data['isDocker'] = True
+
+    proc = httpProc(request, 'serverStatus/services.html', data, 'admin')
+    return proc.render()
+
+def servicesStatus(request):
     try:
         userID = request.session['userID']
         currentACL = ACLManager.loadedACL(userID)
@@ -163,28 +176,7 @@ def services(request):
         if currentACL['admin'] == 1:
             pass
         else:
-            return ACLManager.loadError()
-        data = {}
-
-        if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
-            data['serverName'] = 'OpenLiteSpeed'
-        else:
-            data['serverName'] = 'LiteSpeed Ent'
-
-        dockerInstallPath = '/usr/bin/docker'
-        if not os.path.exists(dockerInstallPath):
-            data['isDocker'] = False
-        else:
-            data['isDocker'] = True
-
-        return render(request, 'serverStatus/services.html', data)
-    except KeyError:
-        return redirect(loadLoginPage)
-
-
-def servicesStatus(request):
-    try:
-        userID = request.session['userID']
+            return ACLManager.loadErrorJson('serviceAction', 0)
 
         lsStatus = []
         sqlStatus = []
@@ -193,7 +185,7 @@ def servicesStatus(request):
         mailStatus = []
         dockerStatus = []
 
-        processlist = subprocess.check_output(['ps', '-A'])
+        processlist = ProcessUtilities.outputExecutioner('ps -A')
 
         def getServiceStats(service):
             if service in processlist:
@@ -220,19 +212,33 @@ def servicesStatus(request):
         dockerStatus.append(getServiceStats('docker'))
 
         # mysql status
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = s.connect_ex(('127.0.0.1', 3306))
 
-        if result == 0:
-            sqlStatus.append(1)
-        else:
-            sqlStatus.append(0)
-        s.close()
+        if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
 
-        if getServiceStats('mysql'):
-            sqlStatus.append(getMemStats('mysql'))
+            mysqlResult = ProcessUtilities.outputExecutioner('systemctl status mysql')
+
+            if mysqlResult.find('active (running)') > -1:
+                sqlStatus.append(1)
+                sqlStatus.append(getMemStats('mariadbd'))
+            else:
+                sqlStatus.append(0)
+                sqlStatus.append(0)
+
+
         else:
-            sqlStatus.append(0)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = s.connect_ex(('127.0.0.1', 3306))
+
+            if result == 0:
+                sqlStatus.append(1)
+            else:
+                sqlStatus.append(0)
+            s.close()
+
+            if getServiceStats('mysql'):
+                sqlStatus.append(getMemStats('mysql'))
+            else:
+                sqlStatus.append(0)
 
         dnsStatus.append(getServiceStats('pdns'))
         if getServiceStats('pdns'):
@@ -269,7 +275,6 @@ def servicesStatus(request):
         return HttpResponse(json.dumps(json_data))
     except KeyError:
         return redirect(loadLoginPage)
-
 
 def servicesAction(request):
     try:
@@ -308,30 +313,20 @@ def servicesAction(request):
                             service = 'pure-ftpd'
 
                     command = 'sudo systemctl %s %s' % (action, service)
-                    cmd = shlex.split(command)
-                    res = subprocess.call(cmd)
+                    ProcessUtilities.executioner(command)
+                    final_dic = {'serviceAction': 1, "error_message": 0}
+                    final_json = json.dumps(final_dic)
+                    return HttpResponse(final_json)
 
-                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-                    result = p.communicate()[0]
 
-                    if res != 0:
-                        final_dic = {'serviceAction': 0, "error_message": "Error while performing action"}
-                        final_json = json.dumps(final_dic)
-                        return HttpResponse(final_json)
-                    else:
-                        final_dic = {'serviceAction': 1, "error_message": 0}
-                        final_json = json.dumps(final_dic)
-                        return HttpResponse(final_json)
-
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'serviceAction': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
-    except KeyError, msg:
+    except KeyError as msg:
         final_dic = {'serviceAction': 0, 'error_message': str(msg)}
         final_json = json.dumps(final_dic)
         return HttpResponse(final_json)
-
 
 def switchTOLSWS(request):
     try:
@@ -346,46 +341,55 @@ def switchTOLSWS(request):
 
         data = json.loads(request.body)
 
-        execPath = "sudo /usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/serverStatus/serverStatusUtil.py"
-        execPath = execPath + " switchTOLSWS --licenseKey " + data['licenseKey']
+        try:
+            licenseKey = data['licenseKey']
+        except:
+            licenseKey = 'trial'
 
-        subprocess.Popen(shlex.split(execPath))
+        execPath = "sudo /usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/serverStatus/serverStatusUtil.py"
+        execPath = execPath + " switchTOLSWS --licenseKey " + licenseKey
+
+        ProcessUtilities.popenExecutioner(execPath)
         time.sleep(2)
 
         data_ret = {'status': 1, 'error_message': "None", }
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
 
-    except BaseException, msg:
+    except BaseException as msg:
         data_ret = {'status': 0, 'error_message': str(msg)}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
-
 
 def switchTOLSWSStatus(request):
     try:
 
         command = 'sudo cat ' + serverStatusUtil.ServerStatusUtil.lswsInstallStatusPath
-        output = subprocess.check_output(shlex.split(command))
+        output = ProcessUtilities.outputExecutioner(command)
 
         if output.find('[404]') > -1:
-            data_ret = {'abort': 1, 'requestStatus': output, 'installed': 0}
+            command = "sudo rm -f " + serverStatusUtil.ServerStatusUtil.lswsInstallStatusPath
+            ProcessUtilities.popenExecutioner(command)
+            data_ret = {'status': 1, 'abort': 1, 'requestStatus': output, 'installed': 0}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
         elif output.find('[200]') > -1:
-            data_ret = {'abort': 1, 'requestStatus': output, 'installed': 1}
+            command = "sudo rm -f " + serverStatusUtil.ServerStatusUtil.lswsInstallStatusPath
+            ProcessUtilities.popenExecutioner(command)
+            data_ret = {'status': 1, 'abort': 1, 'requestStatus': output, 'installed': 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
         else:
-            data_ret = {'abort': 0, 'requestStatus': output, 'installed': 0}
+            data_ret = {'status': 1, 'abort': 0, 'requestStatus': output, 'installed': 0}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-    except BaseException, msg:
-        data_ret = {'abort': 1, 'requestStatus': str(msg), 'installed': 0}
+    except BaseException as msg:
+        command = "sudo rm -f " + serverStatusUtil.ServerStatusUtil.lswsInstallStatusPath
+        ProcessUtilities.popenExecutioner(command)
+        data_ret = {'status': 0,'abort': 1, 'requestStatus': str(msg), 'installed': 0}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
-
 
 def licenseStatus(request):
     try:
@@ -400,20 +404,56 @@ def licenseStatus(request):
                 return ACLManager.loadErrorJson('status', 0)
 
             command = 'sudo cat /usr/local/lsws/conf/serial.no'
-            serial = subprocess.check_output(shlex.split(command))
+            serial = ProcessUtilities.outputExecutioner(command)
+
+            if serial.find('No such file or directory') > -1:
+                final_dic = {'status': 1, "erroMessage": 0, 'lsSerial': 'Trial License in use.', 'lsexpiration': 'Trial license expires 15 days after activation.'}
+                final_json = json.dumps(final_dic)
+                return HttpResponse(final_json)
 
             command = 'sudo /usr/local/lsws/bin/lshttpd -V'
-            expiration = subprocess.check_output(shlex.split(command))
+            expiration = ProcessUtilities.outputExecutioner(command)
 
             final_dic = {'status': 1, "erroMessage": 0, 'lsSerial': serial, 'lsexpiration': expiration}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'erroMessage': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
-    except KeyError, msg:
+    except KeyError as msg:
+        final_dic = {'status': 0, 'erroMessage': str(msg)}
+        final_json = json.dumps(final_dic)
+        return HttpResponse(final_json)
+
+def refreshLicense(request):
+    try:
+        userID = request.session['userID']
+
+        try:
+            currentACL = ACLManager.loadedACL(userID)
+
+            if currentACL['admin'] == 1:
+                pass
+            else:
+                return ACLManager.loadErrorJson('status', 0)
+
+
+            command = 'sudo /usr/local/lsws/bin/lshttpd -V'
+            ProcessUtilities.outputExecutioner(command)
+
+            installUtilities.reStartLiteSpeed()
+
+            final_dic = {'status': 1}
+            final_json = json.dumps(final_dic)
+            return HttpResponse(final_json)
+
+        except BaseException as msg:
+            final_dic = {'status': 0, 'erroMessage': str(msg)}
+            final_json = json.dumps(final_dic)
+            return HttpResponse(final_json)
+    except KeyError as msg:
         final_dic = {'status': 0, 'erroMessage': str(msg)}
         final_json = json.dumps(final_dic)
         return HttpResponse(final_json)
@@ -435,7 +475,7 @@ def changeLicense(request):
             newKey = data['newKey']
 
             command = 'sudo chown -R cyberpanel:cyberpanel /usr/local/lsws/conf'
-            subprocess.call(shlex.split(command))
+            ProcessUtilities.executioner(command)
 
             serialPath = '/usr/local/lsws/conf/serial.no'
             serialFile = open(serialPath, 'w')
@@ -443,29 +483,33 @@ def changeLicense(request):
             serialFile.close()
 
             command = 'sudo chown -R lsadm:lsadm /usr/local/lsws/conf'
-            subprocess.call(shlex.split(command))
+            ProcessUtilities.executioner(command)
 
             command = 'sudo /usr/local/lsws/bin/lshttpd -r'
-            subprocess.call(shlex.split(command))
+            ProcessUtilities.executioner(command)
 
             command = 'sudo /usr/local/lsws/bin/lswsctrl restart'
-            subprocess.call(shlex.split(command))
+            ProcessUtilities.executioner(command)
 
             final_dic = {'status': 1, "erroMessage": 'None'}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'erroMessage': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
-    except KeyError, msg:
+    except KeyError as msg:
         final_dic = {'status': 0, 'erroMessage': str(msg)}
         final_json = json.dumps(final_dic)
         return HttpResponse(final_json)
 
 
 def topProcesses(request):
+    proc = httpProc(request, "serverStatus/topProcesses.html", None, 'admin')
+    return proc.render()
+
+def topProcessesStatus(request):
     try:
         userID = request.session['userID']
         currentACL = ACLManager.loadedACL(userID)
@@ -475,20 +519,8 @@ def topProcesses(request):
         else:
             return ACLManager.loadError()
 
-        templateName = "serverStatus/topProcesses.html"
-        proc = httpProc(request, templateName)
-        return proc.renderPre()
-
-    except KeyError, msg:
-        logging.CyberCPLogFileWriter.writeToFile(str(msg) + "[litespeedStatus]")
-        return redirect(loadLoginPage)
-
-
-def topProcessesStatus(request):
-    try:
-
         with open("/home/cyberpanel/top", "w") as outfile:
-            subprocess.call("sudo top -n1 -b", shell=True, stdout=outfile)
+            subprocess.call("top -n1 -b", shell=True, stdout=outfile)
 
         data = open('/home/cyberpanel/top', 'r').readlines()
 
@@ -497,19 +529,13 @@ def topProcessesStatus(request):
         counter = 0
 
         loadAVG = data[0].split(' ')
-        loadAVG = filter(lambda a: a != '', loadAVG)
+        loadAVG = [a for a in loadAVG if a != '']
 
         loadNow = data[2].split(' ')
-        loadNow = filter(lambda a: a != '', loadNow)
-
-        memory = data[3].split(' ')
-        memory = filter(lambda a: a != '', memory)
-
-        swap = data[4].split(' ')
-        swap = filter(lambda a: a != '', swap)
+        loadNow = [a for a in loadNow if a != '']
 
         processes = data[1].split(' ')
-        processes = filter(lambda a: a != '', processes)
+        processes = [a for a in processes if a != '']
 
         for items in data:
             counter = counter + 1
@@ -517,7 +543,7 @@ def topProcessesStatus(request):
                 continue
 
             points = items.split(' ')
-            points = filter(lambda a: a != '', points)
+            points = [a for a in points if a != '']
 
             dic = {'PID': points[0], 'User': points[1], 'VIRT': points[4],
                    'RES': points[5], 'S': points[7], 'CPU': points[8], 'MEM': points[9],
@@ -551,17 +577,54 @@ def topProcessesStatus(request):
         data['Softirqs'] = loadNow[13] + '%'
 
         ## Memory
-        data['totalMemory'] = str(int(float(memory[3]) / 1024)) + 'MB'
-        data['freeMemory'] = str(int(float(memory[5]) / 1024)) + 'MB'
-        data['usedMemory'] = str(int(float(memory[7]) / 1024)) + 'MB'
-        data['buffCache'] = str(int(float(memory[9]) / 1024)) + 'MB'
+
+        memoryInf0 = ProcessUtilities.outputExecutioner('free -m').splitlines()
+
+        memoryInf0[1] = list(filter(None, memoryInf0[1].split(' ')))
+        memoryInf0[2] = list(filter(None, memoryInf0[2].split(' ')))
+
+
+        try:
+            data['totalMemory'] = '%sMB' % (memoryInf0[1][1])
+        except:
+            data['totalMemory'] = '%sMB' % ('0')
+        try:
+            data['usedMemory'] = '%sMB' % (memoryInf0[1][2])
+        except:
+            data['usedMemory'] = '%sMB' % ('0')
+
+        try:
+            data['freeMemory'] = '%sMB' % (memoryInf0[1][3])
+        except:
+            data['freeMemory'] = '%sMB' % ('0')
+
+        try:
+            data['buffCache'] = '%sMB' % (memoryInf0[1][5])
+        except:
+            data['buffCache'] = '%sMB' % ('0')
+
 
         ## Swap
 
-        data['swapTotalMemory'] = str(int(float(swap[2]) / 1024)) + 'MB'
-        data['swapFreeMemory'] = str(int(float(swap[4]) / 1024)) + 'MB'
-        data['swapUsedMemory'] = str(int(float(swap[6]) / 1024)) + 'MB'
-        data['swapBuffCache'] = str(int(float(swap[8]) / 1024)) + 'MB'
+        try:
+            data['swapTotalMemory'] = '%sMB' % (memoryInf0[2][1])
+        except:
+            data['swapTotalMemory'] = '%sMB' % ('0')
+
+        try:
+            data['swapUsedMemory'] = '%sMB' % (memoryInf0[2][2])
+        except:
+            data['swapUsedMemory'] = '%sMB' % ('0')
+
+        try:
+            data['swapFreeMemory'] = '%sMB' % (memoryInf0[2][3])
+        except:
+            data['swapFreeMemory'] = '%sMB' % ('0')
+
+        try:
+            data['swapBuffCache'] = '%sMB' % (memoryInf0[2][5])
+        except:
+            data['swapBuffCache'] = '%sMB' % ('0')
 
         ## Processes
 
@@ -574,7 +637,7 @@ def topProcessesStatus(request):
         ## CPU Details
 
         command = 'sudo cat /proc/cpuinfo'
-        output = subprocess.check_output(shlex.split(command)).splitlines()
+        output = ProcessUtilities.outputExecutioner(command).splitlines()
 
         import psutil
 
@@ -591,14 +654,40 @@ def topProcessesStatus(request):
                 data['cacheSize'] = items.split(':')[1].strip(' ')
                 break
 
+        ipFile = "/etc/cyberpanel/machineIP"
+        f = open(ipFile)
+        ipData = f.read()
+        ipAddress = ipData.split('\n', 1)[0]
+
+        data['ipAddress'] = ipAddress
+        data['CyberPanelVersion'] = 'v%s.%s' % (VERSION, str(BUILD))
+
+        if ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+            data['OS'] = 'Centos 8'
+        elif ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+            data['OS'] = 'Ubuntu 20.04'
+        elif ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+            data['OS'] = 'Centos 7'
+        elif ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
+            data['OS'] = 'Ubuntu 18.04'
+
+        data['Kernel'] = ProcessUtilities.outputExecutioner('uname -r')
+
+        import shutil
+
+        total, used, free = shutil.disk_usage("/")
+
+        data['TotalDisk'] = '%s GB' % (total // (2 ** 30))
+        data['TotalDiskUsed'] = '%s GB' %  (used // (2 ** 30))
+        data['TotalDiskFree'] =' %s GB' %  (free // (2 ** 30))
+
         final_json = json.dumps(data)
         return HttpResponse(final_json)
 
-    except BaseException, msg:
+    except BaseException as msg:
         data_ret = {'status': 0, 'error_message': str(msg)}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
-
 
 def killProcess(request):
     try:
@@ -620,11 +709,478 @@ def killProcess(request):
             proc = httpProc(request, None)
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'erroMessage': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
-    except KeyError, msg:
+    except KeyError as msg:
         final_dic = {'status': 0, 'erroMessage': str(msg)}
         final_json = json.dumps(final_dic)
         return HttpResponse(final_json)
+
+def packageManager(request):
+    proc = httpProc(request, "serverStatus/packageManager.html", None, 'admin')
+    return proc.render()
+
+def fetchPackages(request):
+    try:
+
+        userID = request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+
+        if currentACL['admin'] == 1:
+            pass
+        else:
+            return ACLManager.loadError()
+
+        data = json.loads(request.body)
+        page = int(str(data['page']).rstrip('\n'))
+        recordsToShow = int(data['recordsToShow'])
+        type = data['type']
+
+        if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+
+            command = 'apt-mark showhold'
+            locked = ProcessUtilities.outputExecutioner(command).split('\n')
+
+            if type == 'CyberPanel':
+
+                command = 'cat /usr/local/CyberCP/AllCPUbuntu.json'
+                packages = json.loads(ProcessUtilities.outputExecutioner(command))
+
+            else:
+                command = 'apt list --installed'
+                packages = ProcessUtilities.outputExecutioner(command).split('\n')
+                packages = packages[4:]
+
+                upgradePackages = []
+
+                if type == 'upgrade':
+                    for pack in packages:
+                        if pack.find('upgradable') > -1:
+                            upgradePackages.append(pack)
+
+                    packages = upgradePackages
+
+
+        elif ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+
+            ### Check Package Lock status
+
+            if os.path.exists('/etc/yum.conf'):
+                yumConf = '/etc/yum.conf'
+            elif os.path.exists('/etc/yum/yum.conf'):
+                yumConf = '/etc/yum/yum.conf'
+
+            yumConfData = open(yumConf, 'r').read()
+            locked = []
+
+            if yumConfData.find('exclude') > -1:
+
+                data = open(yumConf, 'r').readlines()
+
+                for items in data:
+                    if items.find('exclude') > -1:
+                        locked = items.split('=')[1].rstrip('\n').split(' ')
+                        break
+
+            if type == 'installed':
+
+                #### Cater for packages that need updates.
+
+                startForUpdate = 1
+
+                command = 'yum check-update'
+                updates = ProcessUtilities.outputExecutioner(command).split('\n')
+
+                for items in updates:
+                    if items == '':
+                        updates = updates[startForUpdate:]
+                        break
+                    else:
+                        startForUpdate = startForUpdate + 1
+
+                ## make list of packages that need update
+
+                updateNeeded = []
+                for items in updates:
+                    updateNeeded.append(items.split(' ')[0])
+
+                ###
+
+                command = 'yum list installed'
+                packages = ProcessUtilities.outputExecutioner(command).split('\n')
+
+                startFrom = 1
+
+                for items in packages:
+                    if items.find('Installed Packages') > -1:
+                        packages = packages[startFrom:]
+                        break
+                    else:
+                        startFrom = startFrom + 1
+            elif type == 'upgrade':
+                #### Cater for packages that need updates.
+
+                startForUpdate = 1
+
+                command = 'yum check-update'
+                packages = ProcessUtilities.outputExecutioner(command).split('\n')
+
+                for items in packages:
+                    if items == '':
+                        packages = packages[startForUpdate:-1]
+                        break
+                    else:
+                        startForUpdate = startForUpdate + 1
+            elif type == 'CyberPanel':
+                command = 'cat /usr/local/CyberCP/CPCent7repo.json'
+                packages = json.loads(ProcessUtilities.outputExecutioner(command))
+
+        ## make list of packages that need update
+
+
+        #if os.path.exists(ProcessUtilities.debugPath):
+        #    logging.CyberCPLogFileWriter.writeToFile('All packages: %s' % (str(packages)))
+
+        from s3Backups.s3Backups import S3Backups
+
+        pagination = S3Backups.getPagination(len(packages), recordsToShow)
+        endPageNumber, finalPageNumber = S3Backups.recordsPointer(page, recordsToShow)
+        finalPackages = packages[finalPageNumber:endPageNumber]
+
+        json_data = "["
+        checker = 0
+        counter = 0
+
+        if os.path.exists(ProcessUtilities.debugPath):
+             logging.CyberCPLogFileWriter.writeToFile('Final packages: %s' % (str(finalPackages)))
+
+        import re
+        for items in finalPackages:
+            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+                try:
+                    if type == 'CyberPanel':
+
+                        packageName = items['Package'].split('/')[0]
+
+                        if packageName in locked:
+                            lock = 1
+                        else:
+                            lock = 0
+
+                        dic = {'package': packageName,
+                               'version': items['Version'], 'lock': lock}
+
+                        counter = counter + 1
+                        if checker == 0:
+                            json_data = json_data + json.dumps(dic)
+                            checker = 1
+                        else:
+                            json_data = json_data + ',' + json.dumps(dic)
+
+                    else:
+                        nowSplitted = items.split('now')
+
+                        upgrade = 'Not Needed'
+
+                        if nowSplitted[1].split(' ')[3].find('upgradable') > -1:
+                            current = nowSplitted[1].split(' ')
+                            upgrade = '%s %s %s' % (current[3], current[4], current[5])
+
+                        if nowSplitted[0].split('/')[0] in locked:
+                            lock = 1
+                        else:
+                            lock = 0
+
+                        dic = {'package': nowSplitted[0].split('/')[0], 'version': '%s %s' % (nowSplitted[1].split(' ')[1], nowSplitted[1].split(' ')[2]), 'upgrade': upgrade, 'lock': lock}
+
+                        counter = counter + 1
+                        if checker == 0:
+                            json_data = json_data + json.dumps(dic)
+                            checker = 1
+                        else:
+                            json_data = json_data + ',' + json.dumps(dic)
+                except BaseException as msg:
+                    logging.CyberCPLogFileWriter.writeToFile('[ERROR] %s. [fetchPackages:773]' % (str(msg)))
+            elif ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                try:
+                    if type == 'installed' or type == 'upgrade':
+
+                        ###
+
+                        details = items.split(' ')
+                        details = [a for a in details if a != '']
+
+                        if type == 'installed':
+                            if details[0] in updateNeeded:
+                                upgrade = 'Upgrade available'
+                            else:
+                                upgrade = 'Not needed.'
+                        else:
+                            upgrade = 'Upgrade available'
+
+
+                        if details[0].split('.')[0] in locked:
+                            lock = 1
+                        else:
+                            lock = 0
+
+                        dic = {'package': details[0],
+                               'version': details[1],
+                               'upgrade': upgrade, 'lock': lock}
+
+                        counter = counter + 1
+                        if checker == 0:
+                            json_data = json_data + json.dumps(dic)
+                            checker = 1
+                        else:
+                            json_data = json_data + ',' + json.dumps(dic)
+                    elif type == 'CyberPanel':
+
+                        packageName = items['Package']
+
+                        if packageName.split('.')[0] in locked:
+                            lock = 1
+                        else:
+                            lock = 0
+
+                        dic = {'package': packageName,
+                               'version': items['Version'], 'lock': lock}
+
+                        counter = counter + 1
+                        if checker == 0:
+                            json_data = json_data + json.dumps(dic)
+                            checker = 1
+                        else:
+                            json_data = json_data + ',' + json.dumps(dic)
+
+
+                except BaseException as msg:
+                    print(str(msg))
+                    logging.CyberCPLogFileWriter.writeToFile('[ERROR] %s. [fetchPackages:839]' % (str(msg)))
+
+        json_data = json_data + ']'
+
+        data_ret = {'status': 1, 'packages': json_data, 'pagination': pagination, 'fetchedPackages': counter, 'totalPackages': len(packages)}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+    except BaseException as msg:
+        data_ret = {'status': 0, 'error_message': str(msg)}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+def fetchPackageDetails(request):
+    try:
+
+        userID = request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+
+        if currentACL['admin'] == 1:
+            pass
+        else:
+            return ACLManager.loadError()
+
+        data = json.loads(request.body)
+        package = data['package']
+
+        if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+            command = 'apt-cache show %s' % (package)
+            packageDetails = ProcessUtilities.outputExecutioner(command)
+        elif ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+            command = 'yum info %s' % (package)
+            packageDetails = ProcessUtilities.outputExecutioner(command)
+
+        data_ret = {'status': 1, 'packageDetails': packageDetails}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+    except BaseException as msg:
+        data_ret = {'status': 0, 'error_message': str(msg)}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+def updatePackage(request):
+    try:
+
+        userID = request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+
+        if currentACL['admin'] == 1:
+            pass
+        else:
+            return ACLManager.loadError()
+
+        data = json.loads(request.body)
+        package = data['package']
+
+        from serverStatus.serverStatusUtil import ServerStatusUtil
+
+        logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
+                                                  'Starting package(s) upgrade..',
+                                                  1)
+
+        extraArgs = {}
+        extraArgs['package'] = package
+
+        from plogical.applicationInstaller import  ApplicationInstaller
+
+        background = ApplicationInstaller('updatePackage', extraArgs)
+        background.start()
+
+        time.sleep(2)
+
+        data_ret = {'status': 1}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+    except BaseException as msg:
+        data_ret = {'status': 0, 'error_message': str(msg)}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+def lockStatus(request):
+    try:
+
+        userID = request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+
+        if currentACL['admin'] == 1:
+            pass
+        else:
+            return ACLManager.loadError()
+
+        data = json.loads(request.body)
+        package = data['package']
+        type = data['type']
+
+        if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+
+            if type == 0:
+                command = 'apt-mark unhold %s' % (package)
+                ProcessUtilities.executioner(command)
+            else:
+                command = 'apt-mark hold %s' % (package)
+                ProcessUtilities.executioner(command)
+
+        elif ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+
+            package = package.split('.')[0]
+
+            if os.path.exists('/etc/yum.conf'):
+                yumConf = '/etc/yum.conf'
+            elif os.path.exists('/etc/yum/yum.conf'):
+                yumConf = '/etc/yum/yum.conf'
+
+            yumConfData = ProcessUtilities.outputExecutioner('cat %s' % (yumConf))
+            data = yumConfData.splitlines()
+
+            yumConfTmp = '/home/cyberpanel/yumTemp'
+
+            if type == 0:
+                writeToFile = open(yumConfTmp, 'w')
+
+                for items in data:
+                    if items.find('exclude') > -1:
+                        writeToFile.writelines(items.replace(package, ''))
+                    else:
+                        writeToFile.writelines(items)
+
+                writeToFile.close()
+            else:
+
+                if yumConfData.find('exclude') == -1:
+
+                    writeToFile = open(yumConfTmp, 'a')
+                    writeToFile.writelines('exclude=%s\n' % (package))
+                    writeToFile.close()
+
+                else:
+                    writeToFile = open(yumConfTmp, 'w')
+
+                    for items in data:
+                        if items.find('exclude') > -1:
+                            excludeLine = items.strip('\n')
+                            writeToFile.writelines('%s %s\n' % (excludeLine, package))
+                        else:
+                            writeToFile.writelines(items)
+
+                    writeToFile.close()
+
+            command = 'mv %s %s' % (yumConfTmp, yumConf)
+            ProcessUtilities.executioner(command)
+
+        data_ret = {'status': 1}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+    except BaseException as msg:
+        data_ret = {'status': 0, 'error_message': str(msg)}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+
+def CyberPanelPort(request):
+    port = ProcessUtilities.fetchCurrentPort()
+    proc = httpProc(request, "serverStatus/changeCyberPanelPort.html", {'port': port}, 'admin')
+    return proc.render()
+
+
+def submitPortChange(request):
+    try:
+
+        userID = request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+
+        if currentACL['admin'] == 1:
+            pass
+        else:
+            return ACLManager.loadError()
+
+        data = json.loads(request.body)
+        port = data['port']
+
+        ## First Add Port to available firewall
+        from plogical.firewallUtilities import FirewallUtilities
+        from firewall.firewallManager import FirewallManager
+        from firewall.models import FirewallRules
+
+        csfPath = '/etc/csf'
+
+        if os.path.exists(csfPath):
+            fm = FirewallManager(request)
+            dataIn = {'protocol': 'TCP_IN', 'ports': port}
+            fm.modifyPorts(dataIn)
+            dataIn = {'protocol': 'TCP_OUT', 'ports': port}
+            fm.modifyPorts(dataIn)
+        else:
+            try:
+                updateFW = FirewallRules.objects.get(name="CPCustomPort")
+                FirewallUtilities.deleteRule("tcp", updateFW.port, "0.0.0.0/0")
+                updateFW.port = port
+                updateFW.save()
+                FirewallUtilities.addRule('tcp', port, "0.0.0.0/0")
+            except:
+                try:
+                    newFireWallRule = FirewallRules(name="SSHCustom", port=port, proto="tcp")
+                    newFireWallRule.save()
+                    FirewallUtilities.addRule('tcp', port, "0.0.0.0/0")
+                    command = 'firewall-cmd --permanent --remove-service=ssh'
+                    ProcessUtilities.executioner(command)
+                except BaseException as msg:
+                    logging.CyberCPLogFileWriter.writeToFile(str(msg))
+
+        command = "echo '*:%s' > /usr/local/lscp/conf/bind.conf" % (port)
+        ProcessUtilities.executioner(command)
+
+        ProcessUtilities.executioner('systemctl restart lscpd')
+
+        data_ret = {'status': 1,}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)
+
+    except BaseException as msg:
+        data_ret = {'status': 0, 'error_message': str(msg)}
+        json_data = json.dumps(data_ret)
+        return HttpResponse(json_data)

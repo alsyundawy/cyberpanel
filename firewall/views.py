@@ -1,8 +1,8 @@
 from django.shortcuts import redirect
 import json
 from loginSystem.views import loadLoginPage
-from firewallManager import FirewallManager
-from pluginManager import pluginManager
+from .firewallManager import FirewallManager
+from .pluginManager import pluginManager
 # Create your views here.
 
 
@@ -190,7 +190,7 @@ def saveSSHConfigs(request):
         if result != 200:
             return result
 
-        fm = FirewallManager()
+        fm = FirewallManager(request)
         coreResult = fm.saveSSHConfigs(userID, json.loads(request.body))
 
         result = pluginManager.postSaveSSHConfigs(request, coreResult)
@@ -443,7 +443,6 @@ def enableDisableRuleFile(request):
 
 def csf(request):
     try:
-        userID = request.session['userID']
 
         result = pluginManager.preCSF(request)
         if result != 200:
@@ -462,7 +461,6 @@ def csf(request):
 
 def installCSF(request):
     try:
-        userID = request.session['userID']
         fm = FirewallManager(request)
         return fm.installCSF()
     except KeyError:
@@ -470,7 +468,6 @@ def installCSF(request):
 
 def installStatusCSF(request):
     try:
-        userID = request.session['userID']
         fm = FirewallManager(request)
         return fm.installStatusCSF()
     except KeyError:
@@ -478,7 +475,6 @@ def installStatusCSF(request):
 
 def removeCSF(request):
     try:
-        userID = request.session['userID']
         fm = FirewallManager(request)
         return fm.removeCSF()
     except KeyError:
@@ -486,7 +482,6 @@ def removeCSF(request):
 
 def fetchCSFSettings(request):
     try:
-        userID = request.session['userID']
         fm = FirewallManager(request)
         return fm.fetchCSFSettings()
     except KeyError:
@@ -494,7 +489,6 @@ def fetchCSFSettings(request):
 
 def changeStatus(request):
     try:
-        userID = request.session['userID']
 
         result = pluginManager.preChangeStatus(request)
         if result != 200:
@@ -513,14 +507,13 @@ def changeStatus(request):
 
 def modifyPorts(request):
     try:
-        userID = request.session['userID']
 
         result = pluginManager.preModifyPorts(request)
         if result != 200:
             return result
 
         fm = FirewallManager(request)
-        coreResult = fm.modifyPorts()
+        coreResult = fm.modifyPorts(json.loads(request.body))
 
         result = pluginManager.postModifyPorts(request, coreResult)
         if result != 200:
@@ -532,7 +525,6 @@ def modifyPorts(request):
 
 def modifyIPs(request):
     try:
-        userID = request.session['userID']
 
         result = pluginManager.preModifyIPs(request)
         if result != 200:
@@ -546,5 +538,45 @@ def modifyIPs(request):
             return result
 
         return coreResult
+    except KeyError:
+        return redirect(loadLoginPage)
+
+## Imunify
+
+def imunify(request):
+    try:
+
+        fm = FirewallManager(request)
+        return fm.imunify()
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def submitinstallImunify(request):
+    try:
+
+        fm = FirewallManager(request)
+        return fm.submitinstallImunify()
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+## ImunifyAV
+
+def imunifyAV(request):
+    try:
+
+        fm = FirewallManager(request)
+        return fm.imunifyAV()
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def submitinstallImunifyAV(request):
+    try:
+
+        fm = FirewallManager(request)
+        return fm.submitinstallImunifyAV()
+
     except KeyError:
         return redirect(loadLoginPage)

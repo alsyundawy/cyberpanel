@@ -18,6 +18,7 @@
   <phpSuExecMaxConn>5</phpSuExecMaxConn>
   <mime>$SERVER_ROOT/conf/mime.properties</mime>
   <showVersionNumber>0</showVersionNumber>
+  <useIpInProxyHeader>0</useIpInProxyHeader>
   <autoUpdateInterval>86400</autoUpdateInterval>
   <autoUpdateDownloadPkg>1</autoUpdateDownloadPkg>
   <adminEmails>usman@cyberpersons.com</adminEmails>
@@ -33,9 +34,10 @@
     </log>
     <accessLog>
       <fileName>$SERVER_ROOT/logs/access.log</fileName>
+      <logFormat>%h %l %u %t \&quot;%r\&quot; %&gt;s %b \&quot;%{Referer}i\&quot; \&quot;%{User-Agent}i\&quot;</logFormat>
       <rollingSize>10M</rollingSize>
       <keepDays>30</keepDays>
-      <compressArchive>0</compressArchive>
+      <compressArchive>1</compressArchive>
     </accessLog>
   </logging>
   <indexFiles>index.html, index.php</indexFiles>
@@ -49,8 +51,8 @@
   </expires>
   <tuning>
     <eventDispatcher>best</eventDispatcher>
-    <maxConnections>2000</maxConnections>
-    <maxSSLConnections>200</maxSSLConnections>
+    <maxConnections>10000</maxConnections>
+    <maxSSLConnections>10000</maxSSLConnections>
     <connTimeout>300</connTimeout>
     <maxKeepAliveReq>1000</maxKeepAliveReq>
     <smartKeepAlive>0</smartKeepAlive>
@@ -123,31 +125,7 @@
       <name>XSS attack</name>
       <ruleSetAction>log,deny,status:403,msg:'XSS attack'</ruleSetAction>
       <enabled>1</enabled>
-      <ruleSet>SecFilterSelective ARGS &quot;(alert|expression|eval|url)[[:space:]]*\(&quot;
-SecFilterSelective ARGS &quot;(&amp;\{.+\}|(&amp;#[[0-9a-fA-F]]|\x5cx[0-9a-fA-F]){2})&quot;
-
-SecFilterSelective ARGS &quot;((javascript|vbscript):|style[[:space:]]*=)&quot;
-SecFilterSelective ARGS &quot;(fromCharCode|http-equiv|&lt;.+&gt;|innerHTML|dynsrc|--&gt;)&quot;
-SecFilterSelective ARGS &quot;document\.(body|cookie|location|write)&quot;
-
-SecFilterSelective ARGS_VALUES &quot;jsessionid|phpsessid|onReadyStateChange|xmlHttp&quot;
-
-SecFilterSelective ARGS &quot;&lt;(applet|div|embed|iframe|img|meta|object|script|textarea)&quot;
-
-# JavaScript event handlers
-SecFilterSelective ARGS &quot;on(Abort|Blur|Click|DblClick|DragDrop|Error|Focus|KeyUp|KeyDown|KeyPrerss|Load|Mouse(Down|Out|Over|Up)|Move|Reset|Resize|Select|Submit|Unload)&quot;</ruleSet>
-    </censorshipRuleSet>
-    <censorshipRuleSet>
-      <name>SQL injection</name>
-      <ruleSetAction>log,pass,msg:'SQL Injection attack'</ruleSetAction>
-      <enabled>1</enabled>
-      <ruleSet>#SQL generic
-SecFilterSelective ARGS &quot;drop[[:space:]]+(database|table|column|procedure)&quot;
-SecFilterSelective ARGS &quot;delete[[:space:]]+from|create[[:space:]]+table|update.+set.+=|insert[[:space:]]+into.+values&quot;
-SecFilterSelective ARGS &quot;select.+from|bulk[[:space:]]+insert|union.+select|alter[[:space:]]+table&quot;
-SecFilterSelective ARGS &quot;or.+1[[:space:]]*=[[:space:]]1|or 1=1--'|'.+--&quot;
-
-SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+\*/&quot;</ruleSet>
+      <ruleSet></ruleSet>
     </censorshipRuleSet>
     <accessDenyDir>
       <dir>/</dir>
@@ -157,7 +135,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <dir>$SERVER_ROOT/admin/conf/*</dir>
     </accessDenyDir>
     <accessControl>
-      <allow>ALL</allow>
+      <allow>ALL, 127.0.0.1T, 103.21.244.0/22T, 103.22.200.0/22T, 103.31.4.0/22T, 104.16.0.0/12T, 108.162.192.0/18T, 131.0.72.0/22T, 141.101.64.0/18T, 162.158.0.0/15T, 172.64.0.0/13T, 173.245.48.0/20T, 188.114.96.0/20T, 190.93.240.0/20T, 197.234.240.0/22T, 198.41.128.0/17T, 2400:cb00::/32T, 2405:8100::/32T, 2405:b500::/32T, 2606:4700::/32T, 2803:f800::/32T, 2a06:98c0::/29T, 2c0f:f248::/32T, 192.88.134.0/23T, 185.93.228.0/22, 66.248.200.0/22T, 208.109.0.0/22T, 2a02:fe80::/29T</allow>
     </accessControl>
   </security>
   <extProcessorList>
@@ -181,7 +159,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
     </extProcessor>
-	<extProcessor>
+    	<extProcessor>
       <type>lsapi</type>
       <name>lsphp53</name>
       <address>uds://tmp/lshttpd/lsphp53.sock</address>
@@ -220,7 +198,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <memHardLimit>2047M</memHardLimit>
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
-    </extProcessor> 
+    </extProcessor>
 	<extProcessor>
       <type>lsapi</type>
       <name>lsphp55</name>
@@ -240,7 +218,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <memHardLimit>2047M</memHardLimit>
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
-    </extProcessor> 
+    </extProcessor>
 	<extProcessor>
       <type>lsapi</type>
       <name>lsphp56</name>
@@ -260,7 +238,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <memHardLimit>2047M</memHardLimit>
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
-    </extProcessor> 
+    </extProcessor>
     <extProcessor>
       <type>lsapi</type>
       <name>lsphp70</name>
@@ -281,7 +259,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
     </extProcessor>
-	<extProcessor>
+    <extProcessor>
       <type>lsapi</type>
       <name>lsphp71</name>
       <address>uds://tmp/lshttpd/lsphp71.sock</address>
@@ -301,7 +279,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
     </extProcessor>
-	<extProcessor>
+    <extProcessor>
       <type>lsapi</type>
       <name>lsphp72</name>
       <address>uds://tmp/lshttpd/lsphp72.sock</address>
@@ -321,7 +299,7 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
     </extProcessor>
-	<extProcessor>
+    <extProcessor>
       <type>lsapi</type>
       <name>lsphp73</name>
       <address>uds://tmp/lshttpd/lsphp73.sock</address>
@@ -340,7 +318,27 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <memHardLimit>2047M</memHardLimit>
       <procSoftLimit>400</procSoftLimit>
       <procHardLimit>500</procHardLimit>
-    </extProcessor>  
+    </extProcessor>
+    <extProcessor>
+      <type>lsapi</type>
+      <name>lsphp74</name>
+      <address>uds://tmp/lshttpd/lsphp74.sock</address>
+      <maxConns>35</maxConns>
+      <env>PHP_LSAPI_CHILDREN=35</env>
+      <initTimeout>60</initTimeout>
+      <retryTimeout>0</retryTimeout>
+      <persistConn>1</persistConn>
+      <respBuffer>0</respBuffer>
+      <autoStart>3</autoStart>
+      <path>$SERVER_ROOT/lsphp74/bin/lsphp</path>
+      <backlog>100</backlog>
+      <instances>1</instances>
+      <priority>0</priority>
+      <memSoftLimit>2047M</memSoftLimit>
+      <memHardLimit>2047M</memHardLimit>
+      <procSoftLimit>400</procSoftLimit>
+      <procHardLimit>500</procHardLimit>
+    </extProcessor>
   </extProcessorList>
   <scriptHandlerList>
     <scriptHandler>
@@ -353,47 +351,54 @@ SecFilterSelective ARGS &quot;into[[:space:]]+outfile|load[[:space:]]+data|/\*.+
       <type>lsapi</type>
       <handler>lsphp5</handler>
     </scriptHandler>
-	<scriptHandler>
+    <scriptHandler>
       <suffix>php53</suffix>
       <type>lsapi</type>
       <handler>lsphp53</handler>
-    </scriptHandler> 
-	<scriptHandler>
+    </scriptHandler>
+    <scriptHandler>
       <suffix>php54</suffix>
       <type>lsapi</type>
       <handler>lsphp54</handler>
-    </scriptHandler> 
-	<scriptHandler>
+    </scriptHandler>
+    <scriptHandler>
       <suffix>php55</suffix>
       <type>lsapi</type>
       <handler>lsphp55</handler>
-    </scriptHandler> 
-	<scriptHandler>
+    </scriptHandler>
+    <scriptHandler>
       <suffix>php56</suffix>
       <type>lsapi</type>
       <handler>lsphp56</handler>
-    </scriptHandler>  
+    </scriptHandler>
     <scriptHandler>
       <suffix>php70</suffix>
       <type>lsapi</type>
       <handler>lsphp70</handler>
     </scriptHandler>
-	<scriptHandler>
+    <scriptHandler>
       <suffix>php71</suffix>
       <type>lsapi</type>
       <handler>lsphp71</handler>
     </scriptHandler>
-	<scriptHandler>
+    <scriptHandler>
       <suffix>php72</suffix>
       <type>lsapi</type>
       <handler>lsphp72</handler>
     </scriptHandler>
-	<scriptHandler>
+    <scriptHandler>
       <suffix>php73</suffix>
       <type>lsapi</type>
       <handler>lsphp73</handler>
     </scriptHandler>
+    <scriptHandler>
+      <suffix>php74</suffix>
+      <type>lsapi</type>
+      <handler>lsphp74</handler>
+    </scriptHandler>
   </scriptHandlerList>
+  <phpConfig>
+  </phpConfig>
   <railsDefaults>
     <railsEnv>1</railsEnv>
     <maxConns>5</maxConns>

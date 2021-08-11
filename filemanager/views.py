@@ -1,20 +1,14 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.shortcuts import render,redirect
 from loginSystem.models import Administrator
 from loginSystem.views import loadLoginPage
 import plogical.CyberCPLogFileWriter as logging
-from django.http import HttpResponse,Http404
+from django.http import HttpResponse
 import json
 from websiteFunctions.models import Websites
-import subprocess
-import shlex
-import os
-from plogical.virtualHostUtilities import virtualHostUtilities
 from plogical.acl import ACLManager
 from .filemanager import FileManager as FM
-
+from plogical.processUtilities import ProcessUtilities
 # Create your views here.
 
 
@@ -50,21 +44,14 @@ def changePermissions(request):
             else:
                 return ACLManager.loadErrorJson('permissionsChanged', 0)
 
-            website = Websites.objects.get(domain=domainName)
-            externalApp = website.externalApp
-
-            command = "sudo chown -R " + externalApp + ":" + externalApp +" /home/"+domainName
-            subprocess.call(shlex.split(command))
-
-            command = "sudo chown -R lscpd:lscpd /home/" + domainName+"/logs"
-            subprocess.call(shlex.split(command))
+            fm = FM(request, data)
+            fm.fixPermissions(domainName)
 
             data_ret = {'permissionsChanged': 1, 'error_message': "None"}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             data_ret = {'permissionsChanged': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
@@ -75,18 +62,32 @@ def changePermissions(request):
 
 def downloadFile(request):
     try:
+        userID = request.session['userID']
+        admin = Administrator.objects.get(pk=userID)
+        from urllib.parse import quote
+        from django.utils.encoding import iri_to_uri
 
-        data = json.loads(request.body)
-        fileToDownload = data['fileToDownload']
+        fileToDownload = request.build_absolute_uri().split('fileToDownload')[1][1:]
+        fileToDownload = iri_to_uri(fileToDownload)
 
-        response = ''
-        if os.path.isfile(fileToDownload):
-            try:
-                with open(fileToDownload, 'rb') as f:
-                    response = HttpResponse(f.read(), content_type="application/octet-stream")
-                    response['Content-Disposition'] = 'inline; filename=' + os.path.basename(fileToDownload)
-            except Exception as e:
-                raise Http404
+        domainName = request.GET.get('domainName')
+
+        currentACL = ACLManager.loadedACL(userID)
+
+        if ACLManager.checkOwnership(domainName, admin, currentACL) == 1:
+            pass
+        else:
+            return ACLManager.loadErrorJson('permissionsChanged', 0)
+
+        homePath = '/home/%s' % (domainName)
+
+        if fileToDownload.find('..') > -1 or fileToDownload.find(homePath) == -1:
+            return HttpResponse("Unauthorized access.")
+
+        response = HttpResponse(content_type='application/force-download')
+        response['Content-Disposition'] = 'attachment; filename=%s' % (fileToDownload.split('/')[-1])
+        response['X-LiteSpeed-Location'] = '%s' % (fileToDownload)
+
         return response
 
     except KeyError:
@@ -119,6 +120,8 @@ def controller(request):
             return fm.createNewFolder()
         elif method == 'deleteFolderOrFile':
             return fm.deleteFolderOrFile()
+        elif method == 'restore':
+            return fm.restore()
         elif method == 'copy':
             return fm.copy()
         elif method == 'move':
@@ -139,7 +142,7 @@ def controller(request):
             return fm.changePermissions()
 
 
-    except BaseException, msg:
+    except BaseException as msg:
         fm = FM(request, None)
         return fm.ajaxPre(0, str(msg))
 
@@ -159,6 +162,45 @@ def upload(request):
 
         fm = FM(request, data)
         return fm.upload()
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def editFile(request):
+    try:
+        userID = request.session['userID']
+        admin = Administrator.objects.get(pk=userID)
+        from urllib.parse import quote
+        from django.utils.encoding import iri_to_uri
+
+        domainName = request.GET.get('domainName')
+        fileName = request.GET.get('fileName')
+
+        try:
+            theme = request.GET.get('theme')
+            if theme == None:
+                theme = 'cobalt'
+        except:
+            theme = 'cobalt'
+
+        currentACL = ACLManager.loadedACL(userID)
+
+        if ACLManager.checkOwnership(domainName, admin, currentACL) == 1:
+            pass
+        else:
+            return ACLManager.loadError()
+
+        mode = FM.findMode(fileName)
+        modeFiles = FM.findModeFiles(mode)
+        additionalOptions = FM.findAdditionalOptions(mode)
+        themeFile = FM.findThemeFile(theme)
+
+        if ACLManager.checkOwnership(domainName, admin, currentACL) == 1:
+            return render(request, 'filemanager/editFile.html', {'domainName': domainName, 'fileName': fileName,
+                                                                 'mode': mode, 'modeFiles': modeFiles, 'theme': theme,
+                                                                 'themeFile': themeFile, 'additionalOptions': additionalOptions})
+        else:
+            return ACLManager.loadError()
 
     except KeyError:
         return redirect(loadLoginPage)

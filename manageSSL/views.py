@@ -1,45 +1,32 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
-from django.shortcuts import render,redirect
-from loginSystem.views import loadLoginPage
-from websiteFunctions.models import Websites,ChildDomains
+from plogical.httpProc import httpProc
+from websiteFunctions.models import Websites, ChildDomains
 from loginSystem.models import Administrator
 from plogical.virtualHostUtilities import virtualHostUtilities
 from django.http import HttpResponse
 import json
-import shlex
-import subprocess
 from plogical.acl import ACLManager
-from plogical.CyberCPLogFileWriter import CyberCPLogFileWriter as logging
+from plogical.processUtilities import ProcessUtilities
+
 # Create your views here.
 
-
 def loadSSLHome(request):
-    try:
-        userID = request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
-        return render(request, 'manageSSL/index.html', currentACL)
-    except KeyError:
-        return redirect(loadLoginPage)
+    userID = request.session['userID']
+    currentACL = ACLManager.loadedACL(userID)
+    proc = httpProc(request, 'manageSSL/index.html',
+                    currentACL, 'admin')
+    return proc.render()
+
 
 def manageSSL(request):
-    try:
-        userID = request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
+    userID = request.session['userID']
+    currentACL = ACLManager.loadedACL(userID)
+    websitesName = ACLManager.findAllSites(currentACL, userID)
+    proc = httpProc(request, 'manageSSL/manageSSL.html',
+                    {'websiteList': websitesName}, 'manageSSL')
+    return proc.render()
 
-        if currentACL['admin'] == 1:
-            pass
-        elif currentACL['manageSSL'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
-
-        websitesName = ACLManager.findAllSites(currentACL, userID)
-
-        return render(request, 'manageSSL/manageSSL.html',{'websiteList':websitesName})
-    except KeyError:
-        return redirect(loadLoginPage)
 
 def issueSSL(request):
     try:
@@ -59,9 +46,10 @@ def issueSSL(request):
                 data = json.loads(request.body)
                 virtualHost = data['virtualHost']
 
-
-                adminEmail = ""
-                path = ""
+                if ACLManager.checkOwnership(virtualHost, admin, currentACL) == 1:
+                    pass
+                else:
+                    return ACLManager.loadErrorJson()
 
                 try:
                     website = ChildDomains.objects.get(domain=virtualHost)
@@ -74,14 +62,14 @@ def issueSSL(request):
 
                 ## ssl issue
 
-                execPath = "sudo python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
+                execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
                 execPath = execPath + " issueSSL --virtualHostName " + virtualHost + " --administratorEmail " + adminEmail + " --path " + path
-                output = subprocess.check_output(shlex.split(execPath))
+                output = ProcessUtilities.outputExecutioner(execPath)
 
                 if output.find("1,None") > -1:
                     pass
                 else:
-                    data_ret = {'status': 0 ,"SSL": 0,
+                    data_ret = {'status': 0, "SSL": 0,
                                 'error_message': output}
                     json_data = json.dumps(data_ret)
                     return HttpResponse(json_data)
@@ -96,7 +84,7 @@ def issueSSL(request):
                 json_data = json.dumps(data_ret)
                 return HttpResponse(json_data)
 
-        except BaseException,msg:
+        except BaseException as msg:
             data_ret = {'status': 0, "SSL": 0,
                         'error_message': str(msg)}
             json_data = json.dumps(data_ret)
@@ -107,23 +95,15 @@ def issueSSL(request):
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
 
+
 def sslForHostName(request):
-    try:
-        userID = request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
+    userID = request.session['userID']
+    currentACL = ACLManager.loadedACL(userID)
+    websitesName = ACLManager.findAllSites(currentACL, userID, 1)
+    proc = httpProc(request, 'manageSSL/sslForHostName.html',
+                    {'websiteList': websitesName}, 'hostnameSSL')
+    return proc.render()
 
-        if currentACL['admin'] == 1:
-            pass
-        elif currentACL['hostnameSSL'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
-
-        websitesName = ACLManager.findAllSites(currentACL, userID)
-
-        return render(request, 'manageSSL/sslForHostName.html',{'websiteList':websitesName})
-    except KeyError:
-        return redirect(loadLoginPage)
 
 def obtainHostNameSSL(request):
     try:
@@ -143,15 +123,25 @@ def obtainHostNameSSL(request):
                 data = json.loads(request.body)
                 virtualHost = data['virtualHost']
 
-                path = "/home/" + virtualHost + "/public_html"
+                try:
+                    website = Websites.objects.get(domain=virtualHost)
+                    path = "/home/" + virtualHost + "/public_html"
+                except:
+                    website = ChildDomains.objects.get(domain=virtualHost)
+                    path = website.path
+
+                admin = Administrator.objects.get(pk=userID)
+
+                if ACLManager.checkOwnership(virtualHost, admin, currentACL) == 1:
+                    pass
+                else:
+                    return ACLManager.loadErrorJson()
 
                 ## ssl issue
 
-                execPath = "sudo python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
-
+                execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
                 execPath = execPath + " issueSSLForHostName --virtualHostName " + virtualHost + " --path " + path
-
-                output = subprocess.check_output(shlex.split(execPath))
+                output = ProcessUtilities.outputExecutioner(execPath)
 
                 if output.find("1,None") > -1:
                     data_ret = {"status": 1, "SSL": 1,
@@ -166,7 +156,7 @@ def obtainHostNameSSL(request):
 
                     ## ssl issue ends
 
-        except BaseException,msg:
+        except BaseException as msg:
             data_ret = {"status": 0, "SSL": 0,
                         'error_message': str(msg)}
             json_data = json.dumps(data_ret)
@@ -177,23 +167,18 @@ def obtainHostNameSSL(request):
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
 
+
 def sslForMailServer(request):
-    try:
-        userID = request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
+    userID = request.session['userID']
+    currentACL = ACLManager.loadedACL(userID)
 
-        if currentACL['admin'] == 1:
-            pass
-        elif currentACL['mailServerSSL'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
+    websitesName = ACLManager.findAllSites(currentACL, userID)
+    websitesName = websitesName + ACLManager.findChildDomains(websitesName)
 
-        websitesName = ACLManager.findAllSites(currentACL, userID)
+    proc = httpProc(request, 'manageSSL/sslForMailServer.html',
+                    {'websiteList': websitesName}, 'mailServerSSL')
+    return proc.render()
 
-        return render(request, 'manageSSL/sslForMailServer.html',{'websiteList':websitesName})
-    except KeyError:
-        return redirect(loadLoginPage)
 
 def obtainMailServerSSL(request):
     try:
@@ -213,15 +198,19 @@ def obtainMailServerSSL(request):
                 data = json.loads(request.body)
                 virtualHost = data['virtualHost']
 
+                admin = Administrator.objects.get(pk=userID)
+                if ACLManager.checkOwnership(virtualHost, admin, currentACL) == 1:
+                    pass
+                else:
+                    return ACLManager.loadErrorJson()
+
                 path = "/home/" + virtualHost + "/public_html"
 
                 ## ssl issue
 
-                execPath = "sudo python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
-
+                execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
                 execPath = execPath + " issueSSLForMailServer --virtualHostName " + virtualHost + " --path " + path
-
-                output = subprocess.check_output(shlex.split(execPath))
+                output = ProcessUtilities.outputExecutioner(execPath)
 
                 if output.find("1,None") > -1:
                     data_ret = {"status": 1, "SSL": 1,
@@ -237,12 +226,12 @@ def obtainMailServerSSL(request):
                     ## ssl issue ends
 
 
-        except BaseException,msg:
+        except BaseException as msg:
             data_ret = {"status": 0, "SSL": 0,
                         'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-    except KeyError,msg:
+    except KeyError as msg:
         data_ret = {"status": 0, "SSL": 0,
                     'error_message': str(msg)}
         json_data = json.dumps(data_ret)

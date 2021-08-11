@@ -47,7 +47,6 @@
                             </div>
                         </div>
 
-
                         <div ng-hide="installationDetailsForm" class="form-group">
                             <label class="col-sm-3 control-label">{% trans "Domain Name" %}</label>
                             <div class="col-sm-6">
@@ -78,7 +77,6 @@
                             </div>
                         </div>
 
-
                         <div ng-hide="installationDetailsForm" class="form-group">
                             <label class="col-sm-3 control-label">{% trans "Additional Features" %}</label>
                             <div class="col-sm-9">
@@ -107,8 +105,16 @@
                                     </label>
                                 </div>
                             </div>
+                            <label class="col-sm-3 control-label"></label>
+                            <div class="col-sm-9">
+                                <div class="checkbox">
+                                    <label>
+                                        <input ng-model="mailDomain" type="checkbox" value="">
+                                        Create Mail Domain
+                                    </label>
+                                </div>
+                            </div>
                         </div>
-
 
                         <div ng-hide="installationDetailsForm" class="form-group">
                             <label class="col-sm-3 control-label"></label>
@@ -119,7 +125,6 @@
 
                             </div>
                         </div>
-
 
                         <div ng-hide="installationProgress" class="form-group">
                             <label class="col-sm-2 control-label"></label>

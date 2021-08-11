@@ -2,7 +2,6 @@
  * Created by usman on 6/22/18.
  */
 
-
 /* Java script code */
 
 app.controller('powerDNS', function ($scope, $http, $timeout, $window) {
@@ -12,6 +11,7 @@ app.controller('powerDNS', function ($scope, $http, $timeout, $window) {
     $scope.couldNotConnect = true;
     $scope.changesApplied = true;
     $scope.slaveIPs = true;
+    $scope.masterServerHD = true;
 
     var pdnsStatus = false;
 
@@ -21,6 +21,7 @@ app.controller('powerDNS', function ($scope, $http, $timeout, $window) {
     });
 
     fetchPDNSStatus('powerdns');
+
     function fetchPDNSStatus(service) {
 
         $scope.pdnsLoading = false;
@@ -90,9 +91,16 @@ app.controller('powerDNS', function ($scope, $http, $timeout, $window) {
                 status: pdnsStatus,
                 service: service,
                 dnsMode: $scope.dnsMode,
-                slaveIPData: $scope.slaveIPData
+                slaveServerNS: $scope.slaveServerNS,
+                masterServerIP: $scope.masterServerIP,
+                slaveServer: $scope.slaveServer,
+                slaveServerIP: $scope.slaveServerIP,
+                slaveServer2: $scope.slaveServer2,
+                slaveServerIP2: $scope.slaveServerIP2,
+                slaveServer3: $scope.slaveServer3,
+                slaveServerIP3: $scope.slaveServerIP3,
             };
-        }else {
+        } else {
             var data = {
                 status: pdnsStatus,
                 service: service
@@ -118,8 +126,7 @@ app.controller('powerDNS', function ($scope, $http, $timeout, $window) {
                 $scope.couldNotConnect = true;
                 $scope.changesApplied = false;
 
-            }
-            else {
+            } else {
                 $scope.errorMessage = response.data.error_message;
 
                 $scope.failedToFetch = false;
@@ -142,18 +149,20 @@ app.controller('powerDNS', function ($scope, $http, $timeout, $window) {
     $scope.modeChange = function () {
         if ($scope.dnsMode === 'MASTER') {
             $scope.slaveIPs = false;
+            $scope.masterServerHD = true;
 
+        } else if ($scope.dnsMode == 'SLAVE') {
+            $scope.slaveIPs = true;
+            $scope.masterServerHD = false;
         } else {
             $scope.slaveIPs = true;
+            $scope.masterServerHD = true;
         }
     }
 
 });
 
-
 /* Java script code */
-
-
 
 /* Java script code */
 
@@ -173,6 +182,7 @@ app.controller('postfix', function ($scope, $http, $timeout, $window) {
     });
 
     fetchPDNSStatus('postfix');
+
     function fetchPDNSStatus(service) {
 
         $scope.serviceLoading = false;
@@ -260,8 +270,7 @@ app.controller('postfix', function ($scope, $http, $timeout, $window) {
                 $scope.couldNotConnect = true;
                 $scope.changesApplied = false;
 
-            }
-            else {
+            } else {
                 $scope.errorMessage = response.data.error_message;
 
                 $scope.failedToFetch = false;
@@ -285,7 +294,6 @@ app.controller('postfix', function ($scope, $http, $timeout, $window) {
 
 /* Java script code */
 
-
 /* Java script code */
 
 app.controller('pureFTPD', function ($scope, $http, $timeout, $window) {
@@ -304,6 +312,7 @@ app.controller('pureFTPD', function ($scope, $http, $timeout, $window) {
     });
 
     fetchPDNSStatus('pureftpd');
+
     function fetchPDNSStatus(service) {
 
         $scope.serviceLoading = false;
@@ -391,8 +400,7 @@ app.controller('pureFTPD', function ($scope, $http, $timeout, $window) {
                 $scope.couldNotConnect = true;
                 $scope.changesApplied = false;
 
-            }
-            else {
+            } else {
                 $scope.errorMessage = response.data.error_message;
 
                 $scope.failedToFetch = false;
@@ -411,6 +419,110 @@ app.controller('pureFTPD', function ($scope, $http, $timeout, $window) {
 
 
     };
+
+});
+
+/* Java script code */
+
+/* Java script code */
+
+app.controller('manageApplications', function ($scope, $http, $timeout, $window) {
+
+    $scope.cyberpanelLoading = true;
+
+    $scope.removeInstall = function (appName, status) {
+
+        $scope.status = status;
+        $scope.appName = appName;
+
+        $scope.cyberpanelLoading = false;
+
+        url = "/manageservices/removeInstall";
+
+        var data = {
+            appName: appName,
+            status: status
+        };
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+            $scope.cyberpanelLoading = true;
+            if (response.data.status === 1) {
+                getRequestStatus();
+            } else {
+                new PNotify({
+                    title: 'Operation Failed!',
+                    text: response.data.error_message,
+                    type: 'error'
+                });
+            }
+
+        }
+
+        function cantLoadInitialDatas(response) {
+            $scope.cyberpanelLoading = true;
+            new PNotify({
+                title: 'Operation Failed!',
+                text: 'Could not connect to server, please refresh this page',
+                type: 'error'
+            });
+        }
+
+    };
+
+    function getRequestStatus() {
+        $scope.cyberpanelLoading = false;
+
+        url = "/serverstatus/switchTOLSWSStatus";
+
+        var data = {};
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+            if (response.data.abort === 0) {
+                $scope.requestData = response.data.requestStatus;
+                $timeout(getRequestStatus, 1000);
+            } else {
+                // Notifications
+                $timeout.cancel();
+                $scope.requestData = response.data.requestStatus;
+                if (response.data.installed === 1) {
+                    $timeout(function () {
+                        $window.location.reload();
+                    }, 3000);
+                }
+
+            }
+        }
+
+        function cantLoadInitialDatas(response) {
+            $scope.cyberpanelLoading = true;
+            new PNotify({
+                title: 'Operation Failed!',
+                text: 'Could not connect to server, please refresh this page',
+                type: 'error'
+            });
+        }
+
+    }
 
 });
 

@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.shortcuts import HttpResponse, redirect
 from loginSystem.views import loadLoginPage
-from containerManager import ContainerManager
+from .containerManager import ContainerManager
 import json
 from websiteFunctions.models import Websites
 from .models import ContainerLimits
 from random import randint
 from plogical.processUtilities import ProcessUtilities
 import os
-import subprocess, shlex
+import subprocess
 import multiprocessing
 from plogical.httpProc import httpProc
-from plogical.CyberCPLogFileWriter import CyberCPLogFileWriter as logging
 from plogical.acl import ACLManager
 # Create your views here.
 
@@ -43,7 +42,7 @@ def submitContainerInstall(request):
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
 
-    except BaseException, msg:
+    except BaseException as msg:
         data_ret = {'status': 0, 'error_message': str(msg)}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
@@ -118,7 +117,7 @@ def fetchWebsiteLimits(request):
         json_data = json.dumps(finalData)
         return HttpResponse(json_data)
 
-    except BaseException, msg:
+    except BaseException as msg:
         data_ret = {'status': 0, 'error_message': str(msg)}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
@@ -162,7 +161,7 @@ def saveWebsiteLimits(request):
                 cgrules = '/etc/cgrules.conf'
                 enforceString = '{}  cpu,memory,blkio,net_cls  {}/\n'.format(website.externalApp, website.externalApp)
 
-                cgrulesData = subprocess.check_output(shlex.split('sudo cat /etc/cgrules.conf')).splitlines()
+                cgrulesData = ProcessUtilities.outputExecutioner('sudo cat /etc/cgrules.conf').splitlines()
 
                 writeToFile = open(cgrulesTemp, 'w')
 
@@ -219,7 +218,7 @@ def saveWebsiteLimits(request):
             cgrulesTemp = "/home/cyberpanel/" + str(randint(1000, 9999))
             cgrules = '/etc/cgrules.conf'
 
-            cgrulesData = subprocess.check_output(shlex.split('sudo cat /etc/cgrules.conf')).splitlines()
+            cgrulesData = ProcessUtilities.outputExecutioner('sudo cat /etc/cgrules.conf').splitlines()
 
             writeToFile = open(cgrulesTemp, 'w')
 
@@ -265,7 +264,7 @@ def saveWebsiteLimits(request):
         json_data = json.dumps(finalData)
         return HttpResponse(json_data)
 
-    except BaseException, msg:
+    except BaseException as msg:
         data_ret = {'status': 0, 'error_message': str(msg)}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
@@ -288,12 +287,13 @@ def getUsageData(request):
         try:
             type = data['type']
             finalData = {}
+            finalData['status'] = 1
 
             try:
                 if type == 'memory':
 
                     command = 'sudo cat /sys/fs/cgroup/memory/' + website.externalApp + '/memory.usage_in_bytes'
-                    output = str(subprocess.check_output(command, shell=True))
+                    output = str(ProcessUtilities.outputExecutioner(command))
                     finalData['memory'] = int(float(output)/float(1024 * 1024))
 
                 elif type == 'io':
@@ -305,7 +305,7 @@ def getUsageData(request):
                         os.mkdir(path)
 
                     command = 'sudo cat /sys/fs/cgroup/blkio/' + website.externalApp + '/blkio.throttle.io_service_bytes'
-                    output = subprocess.check_output(command, shell=True).splitlines()
+                    output = ProcessUtilities.outputExecutioner(command).splitlines()
 
                     readCurrent = output[0].split(' ')[2]
                     writeCurrent = output[1].split(' ')[2]
@@ -332,10 +332,11 @@ def getUsageData(request):
                 finalData['readRate'] = 0
                 finalData['writeRate'] = 0
         except:
-            command = "sudo top -b -n 1 -u " + website.externalApp + " | awk 'NR>7 { sum += $9; } END { print sum; }'"
-            output = str(subprocess.check_output(command, shell=True))
+            command = "top -b -n 1 -u " + website.externalApp + " | awk 'NR>7 { sum += $9; } END { print sum; }'"
+            output = str(subprocess.check_output(command, shell=True).decode("utf-8"))
 
             finalData = {}
+            finalData['status'] = 1
             if len(output) == 0:
                 finalData['cpu'] = '0'
             else:
@@ -344,7 +345,7 @@ def getUsageData(request):
         final_json = json.dumps(finalData)
         return HttpResponse(final_json)
 
-    except BaseException, msg:
+    except BaseException as msg:
         data_ret = {'status': 0, 'error_message': str(msg), 'cpu': 0, 'memory':0}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)

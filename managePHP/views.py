@@ -1,56 +1,47 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 import sys
-reload(sys)
-sys.setdefaultencoding("utf-8")
-from django.shortcuts import render,redirect
+import importlib
+
+importlib.reload(sys)
+from django.shortcuts import render, redirect
 from loginSystem.views import loadLoginPage
-from .models import PHP,installedPackages
+from .models import PHP, installedPackages, ApachePHP, installedPackagesApache
 from django.http import HttpResponse
 import json
 from plogical.phpUtilities import phpUtilities
 import os
-from plogical.installUtilities import installUtilities
 from plogical.CyberCPLogFileWriter import CyberCPLogFileWriter as logging
 import re
 from plogical.virtualHostUtilities import virtualHostUtilities
-import subprocess
 import shlex
 from random import randint
 from xml.etree import ElementTree
 from plogical.acl import ACLManager
 from plogical.processUtilities import ProcessUtilities
-from phpManager import PHPManager
-# Create your views here.
+from .phpManager import PHPManager
+from plogical.httpProc import httpProc
 
+
+# Create your views here.
 
 def loadPHPHome(request):
     try:
         userID = request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
 
-        if currentACL['admin'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
+        proc = httpProc(request, 'managePHP/index.html',
+                        None, 'admin')
+        return proc.render()
 
-        return render(request,'managePHP/index.html')
     except KeyError:
         return redirect(loadLoginPage)
 
 def installExtensions(request):
     try:
-        userID = request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
-
-        if currentACL['admin'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
 
         if PHP.objects.count() == 0:
             for i in range(3, 7):
-                php = "php"+str(5)+str(i)
+                php = "php" + str(5) + str(i)
                 newPHP = PHP(phpVers=php)
                 newPHP.save()
 
@@ -58,8 +49,6 @@ def installExtensions(request):
             newPHP.save()
             newPHP = PHP(phpVers="php71")
             newPHP.save()
-
-
 
             ### Gather php 53 information
 
@@ -170,9 +159,6 @@ def installExtensions(request):
 
             phpExtension.save()
 
-
-
-
             phpExtension = installedPackages(phpVers=php53,
                                              extensionName="lsphp53-pecl-apc",
                                              description="APC caches and optimizes PHP intermediate code",
@@ -243,7 +229,6 @@ def installExtensions(request):
 
             phpExtension.save()
 
-
             ## non-active packages
 
 
@@ -267,7 +252,6 @@ def installExtensions(request):
                                              status=0)
 
             phpExtension.save()
-
 
             phpExtension = installedPackages(phpVers=php53,
                                              extensionName="lsphp53-mysqlnd",
@@ -694,7 +678,6 @@ def installExtensions(request):
 
             phpExtension.save()
 
-
             phpExtension = installedPackages(phpVers=php55,
                                              extensionName="lsphp55-pgsql",
                                              description="A PostgreSQL database module for PHP",
@@ -803,7 +786,6 @@ def installExtensions(request):
 
             phpExtension.save()
 
-
             phpExtension = installedPackages(phpVers=php55,
                                              extensionName="lsphp55-sqlite",
                                              description="Extension for the SQLite V2 Embeddable SQL Database Engine",
@@ -874,7 +856,6 @@ def installExtensions(request):
                                              status=1)
 
             phpExtension.save()
-
 
             phpExtension = installedPackages(phpVers=php56,
                                              extensionName="lsphp56-imap",
@@ -1009,6 +990,7 @@ def installExtensions(request):
 
             phpExtension.save()
 
+
             ## non-active packages
 
 
@@ -1075,6 +1057,13 @@ def installExtensions(request):
 
             phpExtension.save()
 
+            phpExtension = installedPackages(phpVers=php56,
+                                             extensionName="lsphp56-pecl-imagick",
+                                             description="Extension to create and modify images using ImageMagick",
+                                             status=0)
+
+            phpExtension.save()
+
             ### ################ #################
 
             ##### Gather php 70 information
@@ -1085,7 +1074,7 @@ def installExtensions(request):
 
             phpPath = ''
 
-            if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
                 phpPath = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'php70.xml')
             else:
                 phpPath = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'ubuntuphp70.xml')
@@ -1116,7 +1105,7 @@ def installExtensions(request):
 
             phpPath = ''
 
-            if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
                 phpPath = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'php71.xml')
             else:
                 phpPath = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'ubuntuphp71.xml')
@@ -1144,8 +1133,8 @@ def installExtensions(request):
 
             php72Path = ''
 
-            if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
-                php72Path = os.path.join('/usr','local','CyberCP','managePHP','php72.xml')
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                php72Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'php72.xml')
             else:
                 php72Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'ubuntuphp72.xml')
 
@@ -1172,8 +1161,8 @@ def installExtensions(request):
 
             php73Path = ''
 
-            if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
-                php73Path = os.path.join('/usr','local','CyberCP','managePHP','php73.xml')
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                php73Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'php73.xml')
             else:
                 php73Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'ubuntuphp73.xml')
 
@@ -1193,7 +1182,66 @@ def installExtensions(request):
 
                 phpExtension.save()
 
-        return render(request,'managePHP/installExtensions.html', {'phps': PHPManager.findPHPVersions()})
+        if PHP.objects.count() == 8:
+
+            newPHP74 = PHP(phpVers="php74")
+            newPHP74.save()
+
+            php74Path = ''
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                php74Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'php74.xml')
+            else:
+                php74Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'ubuntuphp74.xml')
+
+            php74 = ElementTree.parse(php74Path)
+
+            php74Extensions = php74.findall('extension')
+
+            for extension in php74Extensions:
+                extensionName = extension.find('extensionName').text
+                extensionDescription = extension.find('extensionDescription').text
+                status = int(extension.find('status').text)
+
+                phpExtension = installedPackages(phpVers=newPHP74,
+                                                 extensionName=extensionName,
+                                                 description=extensionDescription,
+                                                 status=status)
+
+                phpExtension.save()
+        try:
+            newPHP80 = PHP(phpVers="php80")
+            newPHP80.save()
+
+            php80Path = ''
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                php80Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'php80.xml')
+            else:
+                php80Path = os.path.join('/usr', 'local', 'CyberCP', 'managePHP', 'ubuntuphp80.xml')
+
+            php80 = ElementTree.parse(php80Path)
+
+            php80Extensions = php80.findall('extension')
+
+            for extension in php80Extensions:
+                extensionName = extension.find('extensionName').text
+                extensionDescription = extension.find('extensionDescription').text
+                status = int(extension.find('status').text)
+
+                phpExtension = installedPackages(phpVers=newPHP80,
+                                                 extensionName=extensionName,
+                                                 description=extensionDescription,
+                                                 status=status)
+
+                phpExtension.save()
+        except:
+            pass
+
+        proc = httpProc(request, 'managePHP/installExtensions.html',
+                        {'phps': PHPManager.findPHPVersions()}, 'admin')
+        return proc.render()
+
     except KeyError:
         return redirect(loadLoginPage)
 
@@ -1246,7 +1294,7 @@ def getExtensionsInformation(request):
                 final_json = json.dumps({'fetchStatus': 1, 'error_message': "None", "data": json_data})
                 return HttpResponse(final_json)
 
-        except BaseException,msg:
+        except BaseException as msg:
             final_dic = {'fetchStatus': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
 
@@ -1273,21 +1321,25 @@ def submitExtensionRequest(request):
                 type = data['type']
 
                 if type == "install":
-                    phpUtilities.initiateInstall(extensionName)
-
+                    execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/phpUtilities.py"
+                    execPath = execPath + " installPHPExtension --extension " + extensionName
                 else:
-                    phpUtilities.initiateRemoval(extensionName)
+                    execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/phpUtilities.py"
+                    execPath = execPath + " unInstallPHPExtension --extension " + extensionName
+
+                ProcessUtilities.popenExecutioner(execPath)
 
                 final_json = json.dumps({'extensionRequestStatus': 1, 'error_message': "None"})
                 return HttpResponse(final_json)
 
-        except BaseException,msg:
+        except BaseException as msg:
             final_dic = {'extensionRequestStatus': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
 
             return HttpResponse(final_json)
     except KeyError:
-        final_dic = {'extensionRequestStatus': 0, 'error_message': "Not Logged In, please refresh the page or login again."}
+        final_dic = {'extensionRequestStatus': 0,
+                     'error_message': "Not Logged In, please refresh the page or login again."}
         final_json = json.dumps(final_dic)
         return HttpResponse(final_json)
 
@@ -1309,18 +1361,27 @@ def getRequestStatus(request):
 
                 checkCommand = ''
 
-                if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
                     checkCommand = 'yum list installed'
                     checkCommand = shlex.split(checkCommand)
                 else:
                     checkCommand = 'dpkg --list'
                     checkCommand = shlex.split(checkCommand)
 
-                requestStatus = unicode(open(phpUtilities.installLogPath, "r").read())
+                command = "sudo cat " + phpUtilities.installLogPath
+                requestStatus = ProcessUtilities.outputExecutioner(command)
+
+                if requestStatus.find('No such') > -1:
+                    requestStatus = ""
+
                 requestStatusSize = len(requestStatus)
 
                 if requestStatus.find("PHP Extension Installed") > -1:
-                    if subprocess.check_output(checkCommand).find(extensionName) > -1:
+
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
+                    if ProcessUtilities.outputExecutioner(checkCommand).find(extensionName) > -1:
                         ext = installedPackages.objects.get(extensionName=extensionName)
                         ext.status = 1
                         ext.save()
@@ -1329,7 +1390,6 @@ def getRequestStatus(request):
                         ext.status = 0
                         ext.save()
 
-                    installUtilities.reStartLiteSpeed()
                     final_json = json.dumps({'finished': 1, 'extensionRequestStatus': 1,
                                              'error_message': "None",
                                              'requestStatus': requestStatus,
@@ -1337,16 +1397,19 @@ def getRequestStatus(request):
                     return HttpResponse(final_json)
                 elif requestStatus.find("Can not be installed") > -1:
 
-                    if subprocess.check_output(checkCommand).find(extensionName) > -1:
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
+                    if ProcessUtilities.outputExecutioner(checkCommand).find(extensionName) > -1:
                         ext = installedPackages.objects.get(extensionName=extensionName)
                         ext.status = 1
                         ext.save()
+
                     else:
                         ext = installedPackages.objects.get(extensionName=extensionName)
                         ext.status = 0
                         ext.save()
 
-                    installUtilities.reStartLiteSpeed()
                     final_json = json.dumps({'finished': 1, 'extensionRequestStatus': 1,
                                              'error_message': "None",
                                              'requestStatus': requestStatus,
@@ -1354,16 +1417,19 @@ def getRequestStatus(request):
                     return HttpResponse(final_json)
                 elif requestStatus.find("Can not un-install Extension") > -1:
 
-                    if subprocess.check_output(checkCommand).find(extensionName) > -1:
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
+                    if ProcessUtilities.outputExecutioner(checkCommand).find(extensionName) > -1:
                         ext = installedPackages.objects.get(extensionName=extensionName)
                         ext.status = 1
                         ext.save()
+
                     else:
                         ext = installedPackages.objects.get(extensionName=extensionName)
                         ext.status = 0
                         ext.save()
 
-                    installUtilities.reStartLiteSpeed()
                     final_json = json.dumps({'finished': 1, 'extensionRequestStatus': 1,
                                              'error_message': "None",
                                              'requestStatus': requestStatus,
@@ -1371,11 +1437,13 @@ def getRequestStatus(request):
                     return HttpResponse(final_json)
                 elif requestStatus.find("PHP Extension Removed") > -1:
 
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
                     ext = installedPackages.objects.get(extensionName=extensionName)
                     ext.status = 0
                     ext.save()
 
-                    installUtilities.reStartLiteSpeed()
                     final_json = json.dumps({'finished': 1, 'extensionRequestStatus': 1,
                                              'error_message': "None",
                                              'requestStatus': requestStatus,
@@ -1390,16 +1458,17 @@ def getRequestStatus(request):
 
 
 
-        except BaseException,msg:
+        except BaseException as msg:
             final_dic = {'extensionRequestStatus': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
     except KeyError:
-        final_dic = {'extensionRequestStatus': 0, 'error_message': "Not Logged In, please refresh the page or login again."}
+        final_dic = {'extensionRequestStatus': 0,
+                     'error_message': "Not Logged In, please refresh the page or login again."}
         final_json = json.dumps(final_dic)
         return HttpResponse(final_json)
 
-def editPHPConfigs(request):
+def getRequestStatusApache(request):
     try:
         userID = request.session['userID']
         currentACL = ACLManager.loadedACL(userID)
@@ -1407,9 +1476,128 @@ def editPHPConfigs(request):
         if currentACL['admin'] == 1:
             pass
         else:
-            return ACLManager.loadError()
+            return ACLManager.loadErrorJson('extensionRequestStatus', 0)
 
-        return render(request,'managePHP/editPHPConfig.html', {'phps': PHPManager.findPHPVersions()})
+        try:
+            if request.method == 'POST':
+                data = json.loads(request.body)
+                size = data['size']
+                extensionName = data['extensionName']
+
+                checkCommand = ''
+
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                    checkCommand = 'yum list installed'
+                    checkCommand = shlex.split(checkCommand)
+                else:
+                    checkCommand = 'dpkg --list'
+                    checkCommand = shlex.split(checkCommand)
+
+                command = "sudo cat " + phpUtilities.installLogPath
+                requestStatus = ProcessUtilities.outputExecutioner(command)
+
+                requestStatusSize = len(requestStatus)
+
+                if requestStatus.find("PHP Extension Installed") > -1:
+
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
+                    if ProcessUtilities.outputExecutioner(checkCommand).find(extensionName) > -1:
+                        ext = installedPackagesApache.objects.get(extensionName=extensionName)
+                        ext.status = 1
+                        ext.save()
+                    else:
+                        ext = installedPackagesApache.objects.get(extensionName=extensionName)
+                        ext.status = 0
+                        ext.save()
+
+                    final_json = json.dumps({'status': 1, 'finished': 1, 'extensionRequestStatus': 1,
+                                             'error_message': "None",
+                                             'requestStatus': requestStatus,
+                                             'size': requestStatusSize})
+                    return HttpResponse(final_json)
+                elif requestStatus.find("Can not be installed") > -1:
+
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
+                    if ProcessUtilities.outputExecutioner(checkCommand).find(extensionName) > -1:
+                        ext = installedPackagesApache.objects.get(extensionName=extensionName)
+                        ext.status = 1
+                        ext.save()
+
+                    else:
+                        ext = installedPackagesApache.objects.get(extensionName=extensionName)
+                        ext.status = 0
+                        ext.save()
+
+                    final_json = json.dumps({'status': 1, 'finished': 1, 'extensionRequestStatus': 1,
+                                             'error_message': "None",
+                                             'requestStatus': requestStatus,
+                                             'size': requestStatusSize})
+                    return HttpResponse(final_json)
+                elif requestStatus.find("Can not un-install Extension") > -1:
+
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
+                    if ProcessUtilities.outputExecutioner(checkCommand).find(extensionName) > -1:
+                        ext = installedPackagesApache.objects.get(extensionName=extensionName)
+                        ext.status = 1
+                        ext.save()
+
+                    else:
+                        ext = installedPackages.objects.get(extensionName=extensionName)
+                        ext.status = 0
+                        ext.save()
+
+                    final_json = json.dumps({'status': 1, 'finished': 1, 'extensionRequestStatus': 1,
+                                             'error_message': "None",
+                                             'requestStatus': requestStatus,
+                                             'size': requestStatusSize})
+                    return HttpResponse(final_json)
+                elif requestStatus.find("PHP Extension Removed") > -1:
+
+                    command = "sudo rm -f " + phpUtilities.installLogPath
+                    ProcessUtilities.executioner(command)
+
+                    ext = installedPackagesApache.objects.get(extensionName=extensionName)
+                    ext.status = 0
+                    ext.save()
+
+                    final_json = json.dumps({'status': 1, 'finished': 1, 'extensionRequestStatus': 1,
+                                             'error_message': "None",
+                                             'requestStatus': requestStatus,
+                                             'size': requestStatusSize})
+                    return HttpResponse(final_json)
+                else:
+                    final_json = json.dumps({'status': 1, 'finished': 0, 'extensionRequestStatus': 1,
+                                             'error_message': "None",
+                                             'requestStatus': requestStatus,
+                                             'size': requestStatusSize})
+                    return HttpResponse(final_json)
+
+
+
+        except BaseException as msg:
+            logging.writeToFile(str(msg) + ' [getRequestStatusApache]')
+            final_dic = {'status': 0, 'extensionRequestStatus': 0, 'error_message': str(msg)}
+            final_json = json.dumps(final_dic)
+            return HttpResponse(final_json)
+    except KeyError as msg:
+        logging.writeToFile(str(msg) + ' [getRequestStatusApache]')
+        final_dic = {'status': 0, 'extensionRequestStatus': 0,
+                     'error_message': "Not Logged In, please refresh the page or login again."}
+        final_json = json.dumps(final_dic)
+        return HttpResponse(final_json)
+
+def editPHPConfigs(request):
+    try:
+        proc = httpProc(request, 'managePHP/editPHPConfig.html',
+                        {'phps': PHPManager.findPHPVersions()}, 'admin')
+        return proc.render()
+
     except KeyError:
         return redirect(loadLoginPage)
 
@@ -1430,7 +1618,7 @@ def getCurrentPHPConfig(request):
 
                 phpVers = "php" + PHPManager.getPHPString(phpVers)
 
-                if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
                     path = "/usr/local/lsws/ls" + phpVers + "/etc/php.ini"
                 else:
                     initial = phpVers[3]
@@ -1448,7 +1636,8 @@ def getCurrentPHPConfig(request):
                 upload_max_filesize = ""
                 max_input_time = ""
 
-                data = open(path, 'r').readlines()
+                command = "sudo cat " + path
+                data = ProcessUtilities.outputExecutioner(command).split('\n')
 
                 for items in data:
                     if items.find("allow_url_fopen") > -1 and items.find("=") > -1:
@@ -1489,14 +1678,15 @@ def getCurrentPHPConfig(request):
 
                 return HttpResponse(final_json)
 
-        except BaseException,msg:
+        except BaseException as msg:
             final_dic = {'fetchStatus': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
 
             return HttpResponse(final_json)
 
-
-        return render(request,'managePHP/editPHPConfig.html')
+        proc = httpProc(request, 'managePHP/editPHPConfig.html',
+                        None, 'admin')
+        return proc.render()
     except KeyError:
         return redirect(loadLoginPage)
 
@@ -1548,11 +1738,10 @@ def savePHPConfigBasic(request):
 
                 ##
 
-                execPath = "sudo python " + virtualHostUtilities.cyberPanel + "/plogical/phpUtilities.py"
-
+                execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/phpUtilities.py"
                 execPath = execPath + " savePHPConfigBasic --phpVers " + phpVers + " --allow_url_fopen '" + allow_url_fopen + "' --display_errors '" + display_errors + "' --file_uploads '" + file_uploads + "' --allow_url_include '" + allow_url_include + "' --memory_limit " + memory_limit + " --max_execution_time " + max_execution_time + " --upload_max_filesize " + upload_max_filesize + " --max_input_time " + max_input_time + " --post_max_size " + post_max_size
 
-                output = subprocess.check_output(shlex.split(execPath))
+                output = ProcessUtilities.outputExecutioner(execPath)
 
                 if output.find("1,None") > -1:
                     data_ret = {'saveStatus': 1}
@@ -1563,12 +1752,13 @@ def savePHPConfigBasic(request):
                     final_json = json.dumps(final_dic)
                     return HttpResponse(final_json)
 
-        except BaseException,msg:
+        except BaseException as msg:
             final_dic = {'saveStatus': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
     except KeyError:
         return redirect(loadLoginPage)
+
 
 #### Get Advance PHP Configs
 
@@ -1589,7 +1779,7 @@ def getCurrentAdvancedPHPConfig(request):
 
                 phpVers = "php" + PHPManager.getPHPString(phpVers)
 
-                if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
                     path = "/usr/local/lsws/ls" + phpVers + "/etc/php.ini"
                 else:
                     initial = phpVers[3]
@@ -1598,19 +1788,21 @@ def getCurrentAdvancedPHPConfig(request):
                     completeName = str(initial) + '.' + str(final)
                     path = "/usr/local/lsws/ls" + phpVers + "/etc/php/" + completeName + "/litespeed/php.ini"
 
-                configData = open(path, "r").read()
+                command = "sudo cat " + path
+                configData = ProcessUtilities.outputExecutioner(command)
 
                 status = {"fetchStatus": 1, "configData": configData}
                 final_json = json.dumps(status)
                 return HttpResponse(final_json)
 
 
-        except BaseException,msg:
+        except BaseException as msg:
             final_dic = {'fetchStatus': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
     except KeyError:
         return redirect(loadLoginPage)
+
 
 def savePHPConfigAdvance(request):
     try:
@@ -1629,7 +1821,7 @@ def savePHPConfigAdvance(request):
 
                 phpVers = "php" + PHPManager.getPHPString(phpVers)
 
-                if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
                     path = "/usr/local/lsws/ls" + phpVers + "/etc/php.ini"
                 else:
                     initial = phpVers[3]
@@ -1641,16 +1833,13 @@ def savePHPConfigAdvance(request):
                 tempPath = "/home/cyberpanel/" + str(randint(1000, 9999))
 
                 vhost = open(tempPath, "w")
-
                 vhost.write(data['configData'])
-
                 vhost.close()
 
-                execPath = "sudo python " + virtualHostUtilities.cyberPanel + "/plogical/phpUtilities.py"
-
+                execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/phpUtilities.py"
                 execPath = execPath + " savePHPConfigAdvance --phpVers " + path + " --tempPath " + tempPath
 
-                output = subprocess.check_output(shlex.split(execPath))
+                output = ProcessUtilities.outputExecutioner(execPath)
 
                 if output.find("1,None") > -1:
                     status = {"saveStatus": 1, "configData": data['configData']}
@@ -1661,11 +1850,35 @@ def savePHPConfigAdvance(request):
                     json_data = json.dumps(data_ret)
                     return HttpResponse(json_data)
 
-            except BaseException, msg:
+            except BaseException as msg:
                 data_ret = {'saveStatus': 0, 'error_message': str(msg)}
                 json_data = json.dumps(data_ret)
                 return HttpResponse(json_data)
 
-    except KeyError, msg:
+    except KeyError as msg:
         logging.CyberCPLogFileWriter.writeToFile(str(msg) + "[saveConfigsToFile]")
         return HttpResponse("Not Logged in as admin")
+
+## Restart PHP
+
+def restartPHP(request):
+    try:
+        userID = request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+
+        if currentACL['admin'] == 1:
+            pass
+        else:
+            return ACLManager.loadErrorJson('status', 0)
+
+        command = 'killall lsphp'
+        ProcessUtilities.executioner(command)
+
+        status = {"status": 1}
+        final_json = json.dumps(status)
+        return HttpResponse(final_json)
+
+    except BaseException as msg:
+        final_dic = {'status': 0, 'error_message': str(msg)}
+        final_json = json.dumps(final_dic)
+        return HttpResponse(final_json)

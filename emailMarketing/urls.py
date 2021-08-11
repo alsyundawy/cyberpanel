@@ -1,13 +1,16 @@
 from django.conf.urls import url
-import views
+from . import views
 urlpatterns = [
     url(r'^$', views.emailMarketing, name='emailMarketing'),
     url(r'^fetchUsers$', views.fetchUsers, name='fetchUsers'),
     url(r'^enableDisableMarketing$', views.enableDisableMarketing, name='enableDisableMarketing'),
+    url(r'^saveConfigureVerify$', views.saveConfigureVerify, name='saveConfigureVerify'),
+    url(r'^fetchVerifyLogs$', views.fetchVerifyLogs, name='fetchVerifyLogs'),
     url(r'^(?P<domain>(.*))/emailLists$', views.createEmailList, name='createEmailList'),
     url(r'^submitEmailList$', views.submitEmailList, name='submitEmailList'),
     url(r'^(?P<domain>(.*))/manageLists$', views.manageLists, name='manageLists'),
     url(r'^(?P<domain>(.*))/manageSMTP$', views.manageSMTP, name='manageSMTP'),
+    url(r'^(?P<domain>(.*))/configureVerify$', views.configureVerify, name='configureVerify'),
     url(r'^fetchEmails$', views.fetchEmails, name='fetchEmails'),
     url(r'^deleteList$', views.deleteList, name='deleteList'),
     url(r'^emailVerificationJob$', views.emailVerificationJob, name='emailVerificationJob'),

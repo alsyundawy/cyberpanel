@@ -1,14 +1,18 @@
-import CyberCPLogFileWriter as logging
+from plogical import CyberCPLogFileWriter as logging
 import os
 import shlex
 import subprocess
 import socket
 from plogical.processUtilities import ProcessUtilities
-from websiteFunctions.models import ChildDomains, Websites
+try:
+    from websiteFunctions.models import ChildDomains, Websites
+except:
+    pass
 
 class sslUtilities:
 
     Server_root = "/usr/local/lsws"
+    redisConf = '/usr/local/lsws/conf/dvhost_redis.conf'
 
     @staticmethod
     def checkIfSSLMap(virtualHostName):
@@ -25,11 +29,11 @@ class sslUtilities:
                     if items.find("}") > -1:
                         return 0
                 if items.find(virtualHostName) > -1 and sslCheck == 1:
-                    data = filter(None, items.split(" "))
+                    data = [_f for _f in items.split(" ") if _f]
                     if data[1] == virtualHostName:
                         return 1
 
-        except BaseException,msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [IO Error with main config file [checkIfSSLMap]]")
             return 0
 
@@ -41,7 +45,7 @@ class sslUtilities:
                 if items.find("listener SSL") > -1:
                     return 1
 
-        except BaseException,msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [IO Error with main config file [checkSSLListener]]")
             return str(msg)
         return 0
@@ -55,11 +59,19 @@ class sslUtilities:
 
             return [1, withWWW, withoutWWW]
 
-        except BaseException, msg:
+        except BaseException as msg:
             return [0, "347 " + str(msg) + " [issueSSLForDomain]"]
 
     @staticmethod
     def installSSLForDomain(virtualHostName, adminEmail='usman@cyberpersons.com'):
+
+        try:
+            website = Websites.objects.get(domain=virtualHostName)
+            adminEmail = website.adminEmail
+        except BaseException as msg:
+            logging.CyberCPLogFileWriter.writeToFile('%s [installSSLForDomain:72]' % (str(msg)))
+
+
         if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
             confPath = sslUtilities.Server_root + "/conf/vhosts/" + virtualHostName
             completePathToConfigFile = confPath + "/vhost.conf"
@@ -77,7 +89,14 @@ class sslUtilities:
                     keyFile = "  keyFile                  /etc/letsencrypt/live/" + virtualHostName + "/privkey.pem\n"
                     certFile = "  certFile                 /etc/letsencrypt/live/" + virtualHostName + "/fullchain.pem\n"
                     certChain = "  certChain               1" + "\n"
-                    sslProtocol = "  sslProtocol             30" + "\n"
+                    sslProtocol = "  sslProtocol             24" + "\n"
+                    ciphers = "  ciphers                 EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH:ECDHE-RSA-AES128-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA128:DHE-RSA-AES128-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES128-GCM-SHA128:ECDHE-RSA-AES128-SHA384:ECDHE-RSA-AES128-SHA128:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES128-SHA:DHE-RSA-AES128-SHA128:DHE-RSA-AES128-SHA128:DHE-RSA-AES128-SHA:DHE-RSA-AES128-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES128-GCM-SHA384:AES128-GCM-SHA128:AES128-SHA128:AES128-SHA128:AES128-SHA:AES128-SHA:DES-CBC3-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4" + "\n"
+                    enableECDHE = "  enableECDHE             1" + "\n"
+                    renegProtection = "  renegProtection         1" + "\n"
+                    sslSessionCache = "  sslSessionCache         1" + "\n"
+                    enableSpdy = "  enableSpdy              15" + "\n"
+                    enableStapling = "  enableStapling           1" + "\n"
+                    ocspRespMaxAge = "  ocspRespMaxAge           86400" + "\n"
                     map = "  map                     " + virtualHostName + " " + virtualHostName + "\n"
                     final = "}" + "\n" + "\n"
 
@@ -89,6 +108,13 @@ class sslUtilities:
                     writeDataToFile.writelines(certFile)
                     writeDataToFile.writelines(certChain)
                     writeDataToFile.writelines(sslProtocol)
+                    writeDataToFile.writelines(ciphers)
+                    writeDataToFile.writelines(enableECDHE) 
+                    writeDataToFile.writelines(renegProtection)
+                    writeDataToFile.writelines(sslSessionCache)
+                    writeDataToFile.writelines(enableSpdy)
+                    writeDataToFile.writelines(enableStapling)
+                    writeDataToFile.writelines(ocspRespMaxAge)
                     writeDataToFile.writelines(map)
                     writeDataToFile.writelines(final)
                     writeDataToFile.writelines("\n")
@@ -134,7 +160,14 @@ class sslUtilities:
                         keyFile = "  keyFile                 /etc/letsencrypt/live/" + virtualHostName + "/privkey.pem\n"
                         certFile = "  certFile                /etc/letsencrypt/live/" + virtualHostName + "/fullchain.pem\n"
                         certChain = "  certChain               1" + "\n"
-                        sslProtocol = "  sslProtocol             30" + "\n"
+                        sslProtocol = "  sslProtocol             24" + "\n"
+                        ciphers = "  ciphers                 EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH:ECDHE-RSA-AES128-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA128:DHE-RSA-AES128-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES128-GCM-SHA128:ECDHE-RSA-AES128-SHA384:ECDHE-RSA-AES128-SHA128:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES128-SHA:DHE-RSA-AES128-SHA128:DHE-RSA-AES128-SHA128:DHE-RSA-AES128-SHA:DHE-RSA-AES128-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES128-GCM-SHA384:AES128-GCM-SHA128:AES128-SHA128:AES128-SHA128:AES128-SHA:AES128-SHA:DES-CBC3-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4" + "\n"
+                        enableECDHE = "  enableECDHE             1" + "\n"
+                        renegProtection = "  renegProtection         1" + "\n"
+                        sslSessionCache = "  sslSessionCache         1" + "\n"
+                        enableSpdy = "  enableSpdy              15" + "\n"
+                        enableStapling = "  enableStapling           1" + "\n"
+                        ocspRespMaxAge = "  ocspRespMaxAge           86400" + "\n"
                         final = "}"
 
                         writeSSLConfig.writelines("\n")
@@ -144,6 +177,13 @@ class sslUtilities:
                         writeSSLConfig.writelines(certFile)
                         writeSSLConfig.writelines(certChain)
                         writeSSLConfig.writelines(sslProtocol)
+                        writeSSLConfig.writelines(ciphers)
+                        writeSSLConfig.writelines(enableECDHE)
+                        writeSSLConfig.writelines(renegProtection)
+                        writeSSLConfig.writelines(sslSessionCache)
+                        writeSSLConfig.writelines(enableSpdy)
+                        writeSSLConfig.writelines(enableStapling)
+                        writeSSLConfig.writelines(ocspRespMaxAge)
                         writeSSLConfig.writelines(final)
 
                         writeSSLConfig.writelines("\n")
@@ -151,79 +191,91 @@ class sslUtilities:
                         writeSSLConfig.close()
 
                 return 1
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [installSSLForDomain]]")
                 return 0
         else:
-            confPath = sslUtilities.Server_root + "/conf/vhosts/" + virtualHostName
-            completePathToConfigFile = confPath + "/vhost.conf"
+            if not os.path.exists(sslUtilities.redisConf):
+                confPath = sslUtilities.Server_root + "/conf/vhosts/" + virtualHostName
+                completePathToConfigFile = confPath + "/vhost.conf"
 
-            ## Check if SSL VirtualHost already exists
-
-            data = open(completePathToConfigFile, 'r').readlines()
-
-            for items in data:
-                if items.find('*:443') > -1:
-                    return 1
-
-            try:
-
-                try:
-                    chilDomain = ChildDomains.objects.get(domain=virtualHostName)
-                    externalApp = chilDomain.master.externalApp
-                    DocumentRoot = '    DocumentRoot ' + chilDomain.path + '\n'
-                except BaseException, msg:
-                    website = Websites.objects.get(domain=virtualHostName)
-                    externalApp = website.externalApp
-                    DocumentRoot = '    DocumentRoot /home/' + virtualHostName + '/public_html\n'
+                ## Check if SSL VirtualHost already exists
 
                 data = open(completePathToConfigFile, 'r').readlines()
-                phpHandler = ''
 
                 for items in data:
-                    if items.find('AddHandler') > -1 and items.find('php') > -1:
-                        phpHandler = items
-                        break
+                    if items.find('*:443') > -1:
+                        return 1
 
-                confFile = open(completePathToConfigFile, 'a')
+                try:
 
-                doNotModify = '\n\n# Do not modify this file, this is auto-generated file.\n\n'
+                    try:
+                        chilDomain = ChildDomains.objects.get(domain=virtualHostName)
+                        externalApp = chilDomain.master.externalApp
+                        DocumentRoot = '    DocumentRoot ' + chilDomain.path + '\n'
+                    except BaseException as msg:
+                        website = Websites.objects.get(domain=virtualHostName)
+                        externalApp = website.externalApp
+                        DocumentRoot = '    DocumentRoot /home/' + virtualHostName + '/public_html\n'
 
-                VirtualHost = '<VirtualHost *:443>\n\n'
-                ServerName = '    ServerName ' + virtualHostName + '\n'
-                ServerAlias = '    ServerAlias www.' + virtualHostName + '\n'
-                ServerAdmin = '    ServerAdmin ' + adminEmail + '\n'
-                SeexecUserGroup = '    SuexecUserGroup ' + externalApp + ' ' + externalApp + '\n'
-                CustomLogCombined = '    CustomLog /home/' + virtualHostName + '/logs/' + virtualHostName + '.access_log combined\n'
+                    data = open(completePathToConfigFile, 'r').readlines()
+                    phpHandler = ''
 
-                confFile.writelines(doNotModify)
-                confFile.writelines(VirtualHost)
-                confFile.writelines(ServerName)
-                confFile.writelines(ServerAlias)
-                confFile.writelines(ServerAdmin)
-                confFile.writelines(SeexecUserGroup)
-                confFile.writelines(DocumentRoot)
-                confFile.writelines(CustomLogCombined)
+                    for items in data:
+                        if items.find('AddHandler') > -1 and items.find('php') > -1:
+                            phpHandler = items
+                            break
 
-                SSLEngine = '    SSLEngine on\n'
-                SSLVerifyClient = '    SSLVerifyClient none\n'
-                SSLCertificateFile = '    SSLCertificateFile /etc/letsencrypt/live/' + virtualHostName + '/fullchain.pem\n'
-                SSLCertificateKeyFile = '    SSLCertificateKeyFile /etc/letsencrypt/live/' + virtualHostName + '/privkey.pem\n'
+                    confFile = open(completePathToConfigFile, 'a')
 
-                confFile.writelines(SSLEngine)
-                confFile.writelines(SSLVerifyClient)
-                confFile.writelines(SSLCertificateFile)
-                confFile.writelines(SSLCertificateKeyFile)
-                confFile.writelines(phpHandler)
+                    cacheRoot = """    <IfModule LiteSpeed>
+            CacheRoot lscache
+            CacheLookup on
+        </IfModule>
+    """
 
-                VirtualHostEnd = '</VirtualHost>\n'
-                confFile.writelines(VirtualHostEnd)
-                confFile.close()
+                    VirtualHost = '\n<VirtualHost *:443>\n\n'
+                    ServerName = '    ServerName ' + virtualHostName + '\n'
+                    ServerAlias = '    ServerAlias www.' + virtualHostName + '\n'
+                    ServerAdmin = '    ServerAdmin ' + adminEmail + '\n'
+                    SeexecUserGroup = '    SuexecUserGroup ' + externalApp + ' ' + externalApp + '\n'
+                    CustomLogCombined = '    CustomLog /home/' + virtualHostName + '/logs/' + virtualHostName + '.access_log combined\n'
+
+                    confFile.writelines(VirtualHost)
+                    confFile.writelines(ServerName)
+                    confFile.writelines(ServerAlias)
+                    confFile.writelines(ServerAdmin)
+                    confFile.writelines(SeexecUserGroup)
+                    confFile.writelines(DocumentRoot)
+                    confFile.writelines(CustomLogCombined)
+                    confFile.writelines(cacheRoot)
+
+                    SSLEngine = '    SSLEngine on\n'
+                    SSLVerifyClient = '    SSLVerifyClient none\n'
+                    SSLCertificateFile = '    SSLCertificateFile /etc/letsencrypt/live/' + virtualHostName + '/fullchain.pem\n'
+                    SSLCertificateKeyFile = '    SSLCertificateKeyFile /etc/letsencrypt/live/' + virtualHostName + '/privkey.pem\n'
+
+                    confFile.writelines(SSLEngine)
+                    confFile.writelines(SSLVerifyClient)
+                    confFile.writelines(SSLCertificateFile)
+                    confFile.writelines(SSLCertificateKeyFile)
+                    confFile.writelines(phpHandler)
+
+                    VirtualHostEnd = '</VirtualHost>\n'
+                    confFile.writelines(VirtualHostEnd)
+                    confFile.close()
+                    return 1
+                except BaseException as msg:
+                    logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [installSSLForDomain]")
+                    return 0
+            else:
+                cert = open('/etc/letsencrypt/live/' + virtualHostName + '/fullchain.pem').read().rstrip('\n')
+                key = open('/etc/letsencrypt/live/' + virtualHostName + '/privkey.pem', 'r').read().rstrip('\n')
+                command = 'redis-cli hmset "ssl:%s" crt "%s" key "%s"' % (virtualHostName, cert, key)
+                logging.CyberCPLogFileWriter.writeToFile('hello world aaa')
+                logging.CyberCPLogFileWriter.writeToFile(command)
+                ProcessUtilities.executioner(command)
                 return 1
-
-            except BaseException, msg:
-                logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [installSSLForDomain]")
-                return 0
 
 
     @staticmethod
@@ -231,12 +283,8 @@ class sslUtilities:
         try:
             acmePath = '/root/.acme.sh/acme.sh'
 
-            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
-                acmePath = '/home/cyberpanel/.acme.sh/acme.sh'
-
-            if not os.path.exists(acmePath):
-                command = 'wget -O -  https://get.acme.sh | sh'
-                subprocess.call(command, shell=True)
+            # if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
+            #     acmePath = '/home/cyberpanel/.acme.sh/acme.sh'
 
             if aliasDomain == None:
 
@@ -246,29 +294,41 @@ class sslUtilities:
                     subprocess.call(shlex.split(command))
 
                 try:
-                    logging.CyberCPLogFileWriter.writeToFile("Trying to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName)
+                    logging.CyberCPLogFileWriter.writeToFile("Trying to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
 
                     command = acmePath + " --issue -d " + virtualHostName + " -d www." + virtualHostName \
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w ' + sslpath + ' --force'
+                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w ' + sslpath + ' --server letsencrypt --force'
 
-                    output = subprocess.check_output(shlex.split(command))
-                    logging.CyberCPLogFileWriter.writeToFile("Successfully obtained SSL for: " + virtualHostName + " and: www." + virtualHostName)
+                    logging.CyberCPLogFileWriter.writeToFile(command, 0)
+
+                    output = subprocess.check_output(shlex.split(command)).decode("utf-8")
+                    logging.CyberCPLogFileWriter.writeToFile("Successfully obtained SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
+
+                    logging.CyberCPLogFileWriter.SendEmail(adminEmail, adminEmail, output, 'SSL Notification for %s.' % (virtualHostName))
 
 
                 except subprocess.CalledProcessError:
                     logging.CyberCPLogFileWriter.writeToFile(
-                        "Failed to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName)
+                        "Failed to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
+
+                    finalText = "Failed to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName
 
                     try:
-                        logging.CyberCPLogFileWriter.writeToFile("Trying to obtain SSL for: " + virtualHostName)
+                        finalText = '%s\nTrying to obtain SSL for: %s' % (finalText, virtualHostName)
+                        logging.CyberCPLogFileWriter.writeToFile("Trying to obtain SSL for: " + virtualHostName, 0)
                         command = acmePath + " --issue -d " + virtualHostName + ' --cert-file ' + existingCertPath \
                                   + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w ' + sslpath + ' --force'
-                        output = subprocess.check_output(shlex.split(command))
-                        logging.CyberCPLogFileWriter.writeToFile("Successfully obtained SSL for: " + virtualHostName)
+                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w ' + sslpath + ' --server letsencrypt --force'
+                        output = subprocess.check_output(shlex.split(command)).decode("utf-8")
+                        logging.CyberCPLogFileWriter.writeToFile("Successfully obtained SSL for: " + virtualHostName, 0)
+                        finalText = '%s\nSuccessfully obtained SSL for: %s.' % (finalText, virtualHostName)
+                        logging.CyberCPLogFileWriter.SendEmail(adminEmail, adminEmail, finalText,
+                                                               'SSL Notification for %s.' % (virtualHostName))
                     except subprocess.CalledProcessError:
-                        logging.CyberCPLogFileWriter.writeToFile('Failed to obtain SSL, issuing self-signed SSL for: ' + virtualHostName)
+                        logging.CyberCPLogFileWriter.writeToFile('Failed to obtain SSL, issuing self-signed SSL for: ' + virtualHostName, 0)
+                        logging.CyberCPLogFileWriter.SendEmail(adminEmail, adminEmail, 'Failed to obtain SSL, issuing self-signed SSL for: ' + virtualHostName,
+                                                               'SSL Notification for %s.' % (virtualHostName))
                         return 0
             else:
 
@@ -286,7 +346,7 @@ class sslUtilities:
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
                               + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w ' + sslpath + ' --force'
 
-                    output = subprocess.check_output(shlex.split(command))
+                    output = subprocess.check_output(shlex.split(command)).decode("utf-8")
                     logging.CyberCPLogFileWriter.writeToFile(
                         "Successfully obtained SSL for: " + virtualHostName + ", www." + virtualHostName + ", " + aliasDomain + "and www." + aliasDomain + ",")
 
@@ -303,7 +363,7 @@ class sslUtilities:
             else:
                 return 0
 
-        except BaseException,msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [Failed to obtain SSL. [obtainSSLForADomain]]")
             return 0
 
@@ -316,7 +376,20 @@ def issueSSLForDomain(domain, adminEmail, sslpath, aliasDomain = None):
             else:
                 return [0, "210 Failed to install SSL for domain. [issueSSLForDomain]"]
         else:
-            return [0, "283 Failed to obtain SSL for domain. [issueSSLForDomain]"]
 
-    except BaseException,msg:
+            pathToStoreSSLPrivKey = "/etc/letsencrypt/live/%s/privkey.pem" % (domain)
+            pathToStoreSSLFullChain = "/etc/letsencrypt/live/%s/fullchain.pem" % (domain)
+
+            command = 'openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=www.example.com" -keyout ' + pathToStoreSSLPrivKey + ' -out ' + pathToStoreSSLFullChain
+            cmd = shlex.split(command)
+            subprocess.call(cmd)
+
+            if sslUtilities.installSSLForDomain(domain) == 1:
+                logging.CyberCPLogFileWriter.writeToFile("Self signed SSL issued for " + domain + ".")
+                return [1, "None"]
+            else:
+                return [0, "210 Failed to install SSL for domain. [issueSSLForDomain]"]
+
+    except BaseException as msg:
         return [0, "347 "+ str(msg)+ " [issueSSLForDomain]"]
+

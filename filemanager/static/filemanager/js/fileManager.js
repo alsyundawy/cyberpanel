@@ -1,3 +1,19 @@
+function getCookie(name) {
+    var cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+            var cookie = jQuery.trim(cookies[i]);
+            // Does this cookie string begin with the name we want?
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
 var fileManager = angular.module('fileManager', ['angularFileUpload']);
 
 fileManager.config(['$interpolateProvider', function ($interpolateProvider) {
@@ -5,7 +21,12 @@ fileManager.config(['$interpolateProvider', function ($interpolateProvider) {
     $interpolateProvider.endSymbol('$}');
 }]);
 
+
 fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader, $window) {
+
+    $('form').submit(function (e) {
+        e.preventDefault();
+    });
 
     $(document.body).click(function () {
         rightClickNode.style.display = "none";
@@ -21,6 +42,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
     $scope.currentPath = "/home/" + domainName;
     $scope.startingPath = domainName;
     $scope.completeStartingPath = "/home/" + domainName;
+    var trashPath = homePathBack + '/.trash'
 
     $scope.editDisable = true;
     // disable loading image on tree loading
@@ -58,8 +80,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         if (functionName === "primary") {
             nodeForChilds = element.currentTarget.parentNode;
             funcCompletePath = completePath;
-        }
-        else {
+        } else {
             nodeForChilds = element.parentNode;
             funcCompletePath = completePath;
         }
@@ -74,7 +95,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -95,8 +123,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 for (var i = 0; i < keys.length; i++) {
                     if (keys[i] === "error_message" | keys[i] === "status") {
                         continue;
-                    }
-                    else {
+                    } else {
                         path = filesData[keys[i]][0];
                         completePath = filesData[keys[i]][1];
                         dropDown = filesData[keys[i]][2];
@@ -105,8 +132,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 }
 
                 activateMinus(nodeForChilds, funcCompletePath);
-            }
-            else {
+            } else {
             }
 
         }
@@ -185,15 +211,13 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
             liNode.appendChild(secondANode);
 
             return liNode;
-        }
-        else {
+        } else {
             liNode.appendChild(iNodeFile);
             liNode.appendChild(pathNode);
             return liNode;
 
         }
     }
-
 
     function prepareChildNodeUL() {
 
@@ -281,12 +305,12 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
         var tableBody = document.getElementById("tableBodyFiles");
         var getFileName = tableBody.firstChild.firstChild.innerHTML;
-        allFilesAndFolders = []
+        allFilesAndFolders = [];
 
         var collectionOfA = tableBody.getElementsByTagName("tr");
 
         for (var i = 0; i < collectionOfA.length; i++) {
-            collectionOfA[i].style.background = "aliceblue";
+            collectionOfA[i].style.background = "#ccdbe8";
             var getFileName = collectionOfA[i].getElementsByTagName('td')[0].innerHTML;
             allFilesAndFolders.push(getFileName);
         }
@@ -316,7 +340,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         var check = 1;
         var getFileName = nodeName.getElementsByTagName('td')[0].innerHTML;
 
-        if (nodeName.style.backgroundColor == "aliceblue") {
+        if (nodeName.style.backgroundColor === "rgb(204, 219, 232)") {
 
             var tempArray = [];
             nodeName.style.background = "None";
@@ -332,7 +356,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
             return;
         }
 
-        nodeName.style.background = "aliceblue";
+        nodeName.style.background = "#ccdbe8";
 
 
         for (var j = 0; j < allFilesAndFolders.length; j++) {
@@ -351,19 +375,6 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
     }
 
-    /*
-
-     <tr>
-     <th scope="row"><i class="fa fa-folder" aria-hidden="true"></i></th>
-     <td>public_html</td>
-     <td>26KB</td>
-     <td>26 Oct</td>
-     <td>775</td>
-     <td>Folder/File</td>
-     </tr>
-
-     */
-
     function createTR(fileName, fileSize, lastModified, permissions, dirCheck) {
 
         // text nodes are created
@@ -372,9 +383,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         var lastModifiedNode = document.createTextNode(lastModified);
         var permissionsNode = document.createTextNode(permissions);
 
-
         //
-
 
         var iNodeFolder = document.createElement('i');
         iNodeFolder.setAttribute('class', 'fa fa-folder');
@@ -462,7 +471,16 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
     $scope.buttonActivator = function () {
 
+        // for restore button
+        if($scope.currentPath === trashPath) {
+            var restoreBTN = document.getElementById("restoreRight");
+            restoreBTN.style.display = "block";
+        }else{
+            var restoreBTN = document.getElementById("restoreRight");
+            restoreBTN.style.display = "none";
+        }
         // for edit button
+
         if (allFilesAndFolders.length === 1) {
             var editNode = document.getElementById("editFile");
             editNode.style.pointerEvents = "auto";
@@ -475,34 +493,32 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 if (result[0] === "js") {
                     aceEditorMode = "ace/mode/javascript";
                     editNotRight.style.display = "Block";
-                }
-                else if (result[0] === "html") {
+                } else if (result[0] === "html") {
                     aceEditorMode = "ace/mode/html";
                     editNotRight.style.display = "Block";
-                }
-                else if (result[0] === "css") {
+                } else if (result[0] === "css") {
                     aceEditorMode = "ace/mode/css";
                     editNotRight.style.display = "Block";
-                }
-                else if (result[0] === "php") {
+                } else if (result[0] === "php") {
                     aceEditorMode = "ace/mode/php";
+                    editNotRight.style.display = "Block";
+                }
+                else if (result[0] === "py") {
+                    aceEditorMode = "ace/mode/python";
                     editNotRight.style.display = "Block";
                 }
                 else if (result[0] === "txt") {
                     aceEditorMode = "";
                     editNotRight.style.display = "Block";
-                }
-                else if (result[0] === "htaccess") {
+                } else if (result[0] === "htaccess") {
                     aceEditorMode = "";
                     editNotRight.style.display = "Block";
-                }
-                else {
+                } else {
                     var editNode = document.getElementById("editFile");
                     editNode.style.pointerEvents = "none";
                     editNotRight.style.display = "None";
                 }
-            }
-            else {
+            } else {
                 var editNode = document.getElementById("editFile");
                 editNode.style.pointerEvents = "none";
                 editNotRight.style.display = "None";
@@ -527,21 +543,18 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 if (result[0] === "gz") {
                     extractFileNode.style.pointerEvents = "auto";
                     extractNodeRight.style.display = "Block";
-                }
-                else if (result[0] === "zip") {
+                } else if (result[0] === "zip") {
                     extractFileNode.style.pointerEvents = "auto";
                     extractNodeRight.style.display = "Block";
                 } else {
                     extractFileNode.style.pointerEvents = "none";
                     extractNodeRight.style.display = "None";
                 }
-            }
-            else {
+            } else {
                 extractFileNode.style.pointerEvents = "none";
                 extractNodeRight.style.display = "None";
             }
-        }
-        else {
+        } else {
             var extractFileNode = document.getElementById("extractFile");
             extractFileNode.style.pointerEvents = "none";
         }
@@ -553,8 +566,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
             var moveFileNode = document.getElementById("moveFile");
             moveFileNode.style.pointerEvents = "auto";
-        }
-        else {
+        } else {
             var moveFileNode = document.getElementById("moveFile");
             moveFileNode.style.pointerEvents = "none";
         }
@@ -565,8 +577,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
             var copeFileNode = document.getElementById("copyFile");
             copeFileNode.style.pointerEvents = "auto";
-        }
-        else {
+        } else {
             var copeFileNode = document.getElementById("copyFile");
             copeFileNode.style.pointerEvents = "none";
         }
@@ -578,8 +589,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
             var renameFileNode = document.getElementById("renameFile");
             renameFileNode.style.pointerEvents = "auto";
-        }
-        else {
+        } else {
             var renameFileNode = document.getElementById("renameFile");
             renameFileNode.style.pointerEvents = "none";
         }
@@ -590,8 +600,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         if (allFilesAndFolders.length >= 1) {
             var compressFile = document.getElementById("compressFile");
             compressFile.style.pointerEvents = "auto";
-        }
-        else {
+        } else {
             var compressFile = document.getElementById("compressFile");
             compressFile.style.pointerEvents = "none";
         }
@@ -603,8 +612,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
             var deleteFile = document.getElementById("deleteFile");
             deleteFile.style.pointerEvents = "auto";
-        }
-        else {
+        } else {
             var deleteFile = document.getElementById("deleteFile");
             deleteFile.style.pointerEvents = "none";
         }
@@ -625,22 +633,17 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
         if (functionName === "startPoint") {
             completePathToFile = $scope.currentPath;
-        }
-        else if (functionName === "doubleClick") {
+        } else if (functionName === "doubleClick") {
             completePathToFile = $scope.currentPath + "/" + node.innerHTML;
-        }
-        else if (functionName === "homeFetch") {
+        } else if (functionName === "homeFetch") {
             completePathToFile = homePathBack;
-        }
-        else if (functionName === "goBackOnPath") {
+        } else if (functionName === "goBackOnPath") {
             var pos = $scope.currentPath.lastIndexOf("/");
             completePathToFile = $scope.currentPath.slice(0, pos);
-        }
-        else if (functionName === "refresh") {
+        } else if (functionName === "refresh") {
             completePathToFile = $scope.currentPath;
             var rightClickNode = document.getElementById("rightClick");
-        }
-        else if (functionName === "fromTree") {
+        } else if (functionName === "fromTree") {
             completePathToFile = arguments[2];
         }
 
@@ -659,7 +662,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         tableBody.innerHTML = '<img src="' + loadingPath + '">';
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -678,8 +688,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 for (var i = 0; i < keys.length; i++) {
                     if (keys[i] === "error_message" | keys[i] === "status") {
                         continue;
-                    }
-                    else {
+                    } else {
                         var fileName = filesData[keys[i]][0];
                         var lastModified = filesData[keys[i]][2];
                         var fileSize = filesData[keys[i]][3];
@@ -694,8 +703,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
                     }
                 }
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 10, function () {
                 });
                 $scope.fetchForTableSecondary(null, 'homeFetch');
@@ -711,6 +719,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
     function findFileExtension(fileName) {
         return (/[.]/.exec(fileName)) ? /[^.]+$/.exec(fileName) : undefined;
     }
+
     $scope.fetchForTableSecondary(null, "startPoint");
 
     // html editor
@@ -727,8 +736,15 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
             domainName: domainName
         };
 
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
 
         function ListInitialDatas(response) {
 
@@ -741,8 +757,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 editor.getSession().setMode(aceEditorMode);
                 editor.setValue(response.data.fileContents);
 
-            }
-            else {
+            } else {
                 $scope.errorMessageEditor = false;
                 $scope.error_message = response.data.error_message;
             }
@@ -771,7 +786,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -780,8 +802,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
             if (response.data.status === 1) {
                 $scope.htmlEditorLoading = true;
                 $scope.saveSuccess = false;
-            }
-            else {
+            } else {
                 $scope.errorMessageEditor = false;
                 $scope.error_message = response.data.error_message;
             }
@@ -793,6 +814,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
     };
 
+    /// code mirror open
+
+    $scope.editWithCodeMirror = function(){
+        var completePathForFile = $scope.currentPath + "/" + allFilesAndFolders[0];
+        var finalURL = 'https://' + window.location.hostname + ':' + window.location.port + '/filemanager/editFile?domainName=' + domainName + '&fileName=' + completePathForFile;
+        window.open(finalURL);
+    };
+
 
     // uploads
 
@@ -800,6 +829,9 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
     var uploader = $scope.uploader = new FileUploader({
         url: "/filemanager/upload",
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken') // X-CSRF-TOKEN is used for Ruby on Rails Tokens
+        },
         formData: [{
             "method": "upload",
             "home": homePathBack
@@ -810,8 +842,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         if (response.uploadStatus === 1) {
             $scope.errorMessage = true;
             $scope.fetchForTableSecondary(null, 'refresh');
-        }
-        else {
+        } else {
             $scope.errorMessage = false;
             $scope.fileName = response.fileName;
             $scope.error_message = response.error_message;
@@ -842,6 +873,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         $('#showCreateFolder').modal('show');
     };
 
+    $scope.createFolderEnter = function ($event) {
+        var keyCode = $event.which || $event.keyCode;
+        if (keyCode === 13) {
+            $scope.htmlEditorLoading = false;
+            $scope.createNewFolder();
+        }
+    };
+
     $scope.createNewFolder = function () {
 
         $scope.errorMessageFolder = true;
@@ -863,7 +902,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
         var url = '/filemanager/controller';
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -871,8 +917,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 $scope.createSuccess = false;
                 $scope.fetchForTableSecondary(null, 'refresh');
                 $('#showCreateFolder').modal('hide');
-            }
-            else {
+            } else {
                 $scope.errorMessageFolder = false;
                 $scope.error_message = response.data.error_message;
             }
@@ -896,6 +941,15 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         $('#showCreateFile').modal('show');
     };
 
+    $scope.createFileEnter = function ($event) {
+        var keyCode = $event.which || $event.keyCode;
+        if (keyCode === 13) {
+            $scope.htmlEditorLoading = false;
+            $scope.createNewFile();
+        }
+
+    };
+
     $scope.createNewFile = function () {
 
         var completePathForFile = $scope.currentPath + "/" + $scope.newFileName;
@@ -915,7 +969,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -923,8 +984,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 $scope.createSuccess = false;
                 $scope.fetchForTableSecondary(null, 'refresh');
                 $('#showCreateFile').modal('hide');
-            }
-            else {
+            } else {
                 $scope.errorMessageFile = false;
                 $scope.error_message = response.data.error_message;
             }
@@ -956,11 +1016,19 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
             method: "deleteFolderOrFile",
             fileAndFolders: allFilesAndFolders,
             domainRandomSeed: domainRandomSeed,
-            domainName: domainName
+            domainName: domainName,
+            skipTrash: $scope.skipTrash
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
             $scope.deleteLoading = true;
@@ -969,8 +1037,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 var notification = alertify.notify('Successfully Deleted!', 'success', 5, function () {
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify('Files/Folders can not be deleted', 'error', 5, function () {
                     console.log('dismissed');
                 });
@@ -1015,7 +1082,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -1025,8 +1099,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 var notification = alertify.notify('Successfully Compressed!', 'success', 5, function () {
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 5, function () {
                 });
             }
@@ -1058,8 +1131,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
         if (findFileExtension(completeFileToExtract) == "gz") {
             extractionType = "tar.gz";
-        }
-        else {
+        } else {
             extractionType = "zip";
         }
 
@@ -1075,7 +1147,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -1087,8 +1166,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                     console.log('dismissed');
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 10, function () {
                     console.log('dismissed');
                 });
@@ -1100,7 +1178,6 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         }
 
     };
-
 
     /// move
 
@@ -1118,7 +1195,6 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
     }
 
-
     $scope.startMoving = function () {
 
         $scope.moveLoading = false;
@@ -1134,7 +1210,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -1145,8 +1228,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 var notification = alertify.notify('Successfully Moved!', 'success', 5, function () {
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 5, function () {
                 });
             }
@@ -1190,7 +1272,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
             $scope.copyLoading = true;
@@ -1201,8 +1290,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 var notification = alertify.notify('Successfully Copied!', 'success', 5, function () {
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 5, function () {
                 });
             }
@@ -1250,7 +1338,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         var check = 1;
         var getFileName = nodeName.getElementsByTagName('td')[0].innerHTML;
 
-        if (nodeName.style.backgroundColor === "aliceblue") {
+        if (nodeName.style.backgroundColor === "#ccdbe8") {
 
             var tempArray = [];
             nodeName.style.background = "None";
@@ -1266,7 +1354,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
             return;
         }
 
-        nodeName.style.background = "aliceblue";
+        nodeName.style.background = "#ccdbe8";
 
 
         for (var j = 0; j < allFilesAndFolders.length; j++) {
@@ -1282,7 +1370,6 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         // activating deactivating functions
         $scope.buttonActivator();
 
-
     };
 
     // rename
@@ -1296,6 +1383,13 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         $scope.newFileName = "";
     };
 
+    $scope.renameEnter = function ($event) {
+        var keyCode = $event.which || $event.keyCode;
+        if (keyCode === 13) {
+            $scope.htmlEditorLoading = false;
+            $scope.renameFile();
+        }
+    };
 
     $scope.renameFile = function () {
 
@@ -1311,7 +1405,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -1323,8 +1424,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 var notification = alertify.notify('Successfully Renamed!', 'success', 5, function () {
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 5, function () {
                 });
             }
@@ -1351,7 +1451,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -1361,8 +1468,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                     console.log('dismissed');
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 5, function () {
                     console.log('dismissed');
                 });
@@ -1379,11 +1485,9 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
     // Download files
 
     $scope.downloadFile = function () {
-
         url = "/filemanager/downloadFile";
         var downloadURL = $scope.currentPath + "/" + allFilesAndFolders[0];
-        var indexPublicHTML = downloadURL.indexOf("public_html") + 11;
-        $window.location.href = '/preview/' + domainName + downloadURL.slice(indexPublicHTML);
+        window.location.href = url + '?domainName=' + domainName + '&fileToDownload=' + downloadURL;
     };
 
 
@@ -1395,12 +1499,10 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
     $scope.groupPermissions = 0;
     $scope.wordlPermissions = 0;
 
-
     $scope.showPermissionsModal = function () {
         $('#showPermissions').modal('show');
         $scope.permissionsPath = allFilesAndFolders[0];
     };
-
 
     $scope.updateReadPermissions = function (value) {
 
@@ -1410,8 +1512,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
                 if ($scope.userRead === true) {
                     $scope.userPermissions = $scope.userPermissions + 4;
-                }
-                else {
+                } else {
                     if ($scope.userRead !== undefined) {
                         $scope.userPermissions = $scope.userPermissions - 4;
                     }
@@ -1450,8 +1551,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
                 if ($scope.userWrite === true) {
                     $scope.userPermissions = $scope.userPermissions + 2;
-                }
-                else {
+                } else {
                     if ($scope.userWrite !== undefined) {
                         $scope.userPermissions = $scope.userPermissions - 2;
                     }
@@ -1490,8 +1590,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
                 if ($scope.userExecute === true) {
                     $scope.userPermissions = $scope.userPermissions + 1;
-                }
-                else {
+                } else {
                     if ($scope.userExecute !== undefined) {
                         $scope.userPermissions = $scope.userPermissions - 1;
                     }
@@ -1522,7 +1621,6 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         }
     };
 
-
     $scope.changePermissionsRecursively = function () {
         $scope.changePermissions(1);
     };
@@ -1544,7 +1642,14 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
         };
 
 
-        $http.post(url, data).then(ListInitialDatas, cantLoadInitialDatas);
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
         function ListInitialDatas(response) {
 
@@ -1555,8 +1660,7 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
                 var notification = alertify.notify('Permissions Successfully Changed!', 'success', 5, function () {
                 });
                 $scope.fetchForTableSecondary(null, 'refresh');
-            }
-            else {
+            } else {
                 var notification = alertify.notify(response.data.error_message, 'error', 5, function () {
                 });
             }
@@ -1568,5 +1672,53 @@ fileManager.controller('fileManagerCtrl', function ($scope, $http, FileUploader,
 
     };
 
+    ///
+
+    //
+    $scope.cyberPanelLoading = true;
+    $scope.showRestoreModal = function () {
+        $scope.createSuccess = true;
+        $scope.errorMessageFolder = true;
+        $scope.newFolderName = "";
+        $('#showRestore').modal('show');
+    };
+
+    $scope.restoreFinal = function () {
+        $scope.cyberPanelLoading = false;
+        var data = {
+            path: $scope.currentPath,
+            method: "restore",
+            fileAndFolders: allFilesAndFolders,
+            domainRandomSeed: domainRandomSeed,
+            domainName: domainName,
+        };
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+        function ListInitialDatas(response) {
+            $scope.cyberPanelLoading = true;
+            if (response.data.status === 1) {
+                $('#showRestore').modal('hide');
+                var notification = alertify.notify('Successfully restored to its original location!', 'success', 5, function () {
+                });
+                $scope.fetchForTableSecondary(null, 'refresh');
+            } else {
+                var notification = alertify.notify('Files/Folders can not be restored', 'error', 5, function () {
+                    console.log('dismissed');
+                });
+            }
+
+        }
+
+        function cantLoadInitialDatas(response) {
+        }
+
+    };
 
 });

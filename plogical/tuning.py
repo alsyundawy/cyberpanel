@@ -1,9 +1,9 @@
-import CyberCPLogFileWriter as logging
-from installUtilities import installUtilities
+import sys
+sys.path.append('/usr/local/CyberCP')
+from plogical.CyberCPLogFileWriter import CyberCPLogFileWriter as logging
+from plogical.installUtilities import installUtilities
 import argparse
-import subprocess
-import shlex
-from processUtilities import ProcessUtilities
+from plogical.processUtilities import ProcessUtilities
 from xml.etree import ElementTree
 
 class tuning:
@@ -15,7 +15,7 @@ class tuning:
             try:
                 dataToReturn = {}
                 command = "sudo cat /usr/local/lsws/conf/httpd_config.conf"
-                datas = subprocess.check_output(shlex.split(command)).split("\n")
+                datas = ProcessUtilities.outputExecutioner(command).split("\n")
 
                 for items in datas:
                     if items.find("maxConnections")>-1:
@@ -49,7 +49,7 @@ class tuning:
                         dataToReturn['enableGzipCompress'] = data[1]
 
                 return dataToReturn
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [fetchTuningDetails]")
                 return 0
@@ -58,7 +58,7 @@ class tuning:
                 dataToReturn = {}
 
                 command = "sudo cat /usr/local/lsws/conf/httpd_config.xml"
-                datas = subprocess.check_output(shlex.split(command))
+                datas = ProcessUtilities.outputExecutioner(command)
                 comTree = ElementTree.fromstring(datas)
                 tuningData = comTree.find('tuning')
 
@@ -71,7 +71,7 @@ class tuning:
 
                 return dataToReturn
 
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [fetchTuningDetails]")
                 return 0
@@ -125,11 +125,11 @@ class tuning:
 
                 writeDataToFile.close()
 
-                print "1,None"
-            except BaseException, msg:
+                print("1,None")
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [saveTuningDetails]")
-                print "0," + str(msg)
+                print("0," + str(msg))
         else:
             try:
                 datas = open("/usr/local/lsws/conf/httpd_config.xml").readlines()
@@ -173,11 +173,11 @@ class tuning:
                     else:
                         writeDataToFile.writelines(items)
                 writeDataToFile.close()
-                print "1,None"
-            except BaseException, msg:
+                print("1,None")
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [saveTuningDetails]")
-                print "0," + str(msg)
+                print("0," + str(msg))
 
 
     @staticmethod
@@ -187,7 +187,7 @@ class tuning:
                 path = installUtilities.Server_root_path + "/conf/vhosts/"+virtualHost+"/vhost.conf"
 
                 command = "sudo cat "+path
-                datas = subprocess.check_output(shlex.split(command)).split("\n")
+                datas = ProcessUtilities.outputExecutioner(command).split("\n")
 
                 dataToReturn = {}
 
@@ -223,14 +223,14 @@ class tuning:
                         dataToReturn['procHardLimit'] = data[1]
 
                 return dataToReturn
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [fetchPHPDetails]")
                 return 0
         else:
             try:
                 command = "sudo cat /usr/local/lsws/conf/httpd_config.xml"
-                datas = subprocess.check_output(shlex.split(command))
+                datas = ProcessUtilities.outputExecutioner(command)
                 comTree = ElementTree.fromstring(datas)
                 extProcessorList = comTree.findall('extProcessorList/extProcessor')
 
@@ -248,7 +248,7 @@ class tuning:
                         break
 
                 return dataToReturn
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [fetchPHPDetails]")
                 return 0
@@ -308,11 +308,11 @@ class tuning:
 
                 writeDataToFile.close()
 
-                print "1,None"
-            except BaseException, msg:
+                print("1,None")
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [saveTuningDetails]")
-                print "0,"+str(msg)
+                print("0,"+str(msg))
         else:
             try:
                 path = "/usr/local/lsws/conf/httpd_config.xml"
@@ -377,12 +377,12 @@ class tuning:
 
                 writeDataToFile.close()
 
-                print "1,None"
+                print("1,None")
 
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [saveTuningDetails]")
-                print "0," + str(msg)
+                print("0," + str(msg))
 
 def main():
 

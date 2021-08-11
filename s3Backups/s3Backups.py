@@ -1,4 +1,4 @@
-#!/usr/local/CyberCP/bin/python2
+#!/usr/local/CyberCP/bin/python
 try:
     import os
     import os.path
@@ -18,12 +18,17 @@ try:
     from random import randint
     import subprocess, shlex
     from plogical.processUtilities import ProcessUtilities
+    from websiteFunctions.models import Websites, Backups
+    from plogical.virtualHostUtilities import virtualHostUtilities
+    from multiprocessing import Process
+    import plogical.backupUtilities as backupUtil
 except:
     import threading as multi
     from random import randint
     import json
     import requests
     import subprocess, shlex
+    from multiprocessing import Process
 
 
 class S3Backups(multi.Thread):
@@ -37,15 +42,11 @@ class S3Backups(multi.Thread):
         try:
             if self.function == 'connectAccount':
                 self.connectAccount()
-            elif self.function == 'forceRunAWSBackup':
-                self.forceRunAWSBackup()
             elif self.function == 'forceRunAWSBackupDO':
                 self.forceRunAWSBackupDO()
-            elif self.function == 'runAWSBackups':
-                self.runAWSBackups()
             elif self.function == 'forceRunAWSBackupMINIO':
                 self.forceRunAWSBackupMINIO()
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg) + ' [S3Backups.run]')
 
     @staticmethod
@@ -92,20 +93,6 @@ class S3Backups(multi.Thread):
         json_data = json_data + ']'
         return json_data
 
-    def setupCron(self):
-        tempPath = '/home/cyberpanel/' + str(randint(10000, 99999))
-
-        writeToFile = open(tempPath, 'w')
-        writeToFile.write('0 0 * * * /usr/local/CyberCP/bin/python2 /usr/local/CyberCP/s3Backups/s3Backups.py > /home/cyberpanel/error-logs.txt 2>&1\n')
-        writeToFile.close()
-
-        command = 'sudo crontab -u cyberpanel ' + tempPath
-        ProcessUtilities.executioner(command)
-        try:
-            os.remove(tempPath)
-        except:
-            pass
-
     def connectAccount(self):
         try:
 
@@ -132,11 +119,9 @@ class S3Backups(multi.Thread):
 
             ##
 
-            self.setupCron()
-
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -148,8 +133,9 @@ class S3Backups(multi.Thread):
 
         aws_access_key_id = data[1].split(' ')[2].strip(' ').strip('\n')
         aws_secret_access_key = data[2].split(' ')[2].strip(' ').strip('\n')
+        region = data[3].split(' ')[2].strip(' ').strip('\n')
 
-        return aws_access_key_id, aws_secret_access_key
+        return aws_access_key_id, aws_secret_access_key, region
 
     def fetchBuckets(self):
         try:
@@ -162,14 +148,21 @@ class S3Backups(multi.Thread):
             if currentACL['admin'] == 0:
                 return proc.ajax(0, 'Only administrators can use AWS S3 Backups.')
 
+            aws_access_key_id, aws_secret_access_key, region = self.fetchAWSKeys()
 
-            aws_access_key_id, aws_secret_access_key = self.fetchAWSKeys()
-
-            s3 = boto3.resource(
-                's3',
-                aws_access_key_id = aws_access_key_id,
-                aws_secret_access_key = aws_secret_access_key
-            )
+            if region.find('http') > -1:
+                s3 = boto3.resource(
+                    's3',
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
+                    endpoint_url=region,
+                )
+            else:
+                s3 = boto3.resource(
+                    's3',
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
+                )
 
             json_data = "["
             checker = 0
@@ -187,7 +180,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -204,8 +197,28 @@ class S3Backups(multi.Thread):
 
             admin = Administrator.objects.get(pk=userID)
 
+            ## What to backup
+
+            WTB = {}
+            try:
+                WTB['data'] = int(self.data['data'])
+            except:
+                WTB['data'] = 0
+
+            try:
+                WTB['databases'] = int(self.data['databases'])
+            except:
+                WTB['databases'] = 0
+
+            try:
+                WTB['emails'] = int(self.data['emails'])
+            except:
+                WTB['emails'] = 0
+
+            ###
+
             newPlan = BackupPlan(owner=admin, name=self.data['planName'].replace(' ', ''), freq=self.data['frequency'],
-                                 retention=self.data['retenion'], bucket=self.data['bucketName'])
+                                 retention=self.data['retenion'], bucket=self.data['bucketName'], config=json.dumps(WTB))
             newPlan.save()
 
             for items in self.data['websitesInPlan']:
@@ -214,7 +227,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg) + ' [createPlan]')
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
@@ -235,12 +248,16 @@ class S3Backups(multi.Thread):
             checker = 0
 
             for plan in admin.backupplan_set.all():
+                config = json.loads(plan.config)
                 dic = {
                     'name': plan.name,
                     'bucket': plan.bucket,
                     'freq': plan.freq,
                     'retention': plan.retention,
                     'lastRun': plan.lastRun,
+                    'data': config['data'],
+                    'databases': config['databases'],
+                    'emails': config['emails'],
                 }
 
                 if checker == 0:
@@ -253,7 +270,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -273,7 +290,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -308,7 +325,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -329,7 +346,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -346,15 +363,34 @@ class S3Backups(multi.Thread):
 
             changePlan = BackupPlan.objects.get(name=self.data['planName'])
 
+            ## What to backup
+
+            WTB = {}
+            try:
+                WTB['data'] = int(self.data['data'])
+            except:
+                WTB['data'] = 0
+
+            try:
+                WTB['databases'] = int(self.data['databases'])
+            except:
+                WTB['databases'] = 0
+
+            try:
+                WTB['emails'] = int(self.data['emails'])
+            except:
+                WTB['emails'] = 0
+
             changePlan.bucket = self.data['bucketName']
             changePlan.freq = self.data['frequency']
             changePlan.retention = self.data['retention']
+            changePlan.config = json.dumps(WTB)
 
             changePlan.save()
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -384,115 +420,68 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None, data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajaxPre(0, str(msg))
 
     def createBackup(self, virtualHost):
-        finalData = json.dumps({'websiteToBeBacked': virtualHost})
 
-        r = requests.post("http://localhost:5003/backup/submitBackupCreation", data=finalData)
+        website = Websites.objects.get(domain=virtualHost)
+        # defining paths
 
-        data = json.loads(r.text)
-        try:
-            backupPath = data['tempStorage']
-        except:
-            pass
+        ## /home/example.com/backup
+        backupPath = os.path.join("/home", virtualHost, "backup/")
+        domainUser = website.externalApp
+        backupName = 'backup-' + domainUser + "-" + time.strftime("%m.%d.%Y_%H-%M-%S")
+
+        ## /home/example.com/backup/backup-example.com-02.13.2018_10-24-52
+        tempStoragePath = os.path.join(backupPath, backupName)
+
+        p = Process(target=backupUtil.submitBackupCreation,
+                    args=(tempStoragePath, backupName, backupPath, virtualHost))
+        p.start()
+
+        time.sleep(2)
 
         while (1):
-            r = requests.post("http://localhost:5003/backup/backupStatus", data=finalData)
-            time.sleep(2)
-            data = json.loads(r.text)
 
-            if data['backupStatus'] == 0:
-                return 0, data['error_message']
-            elif data['abort'] == 1:
-                return 1, backupPath
+            backupDomain = virtualHost
+            status = os.path.join("/home", backupDomain, "backup/status")
+            backupFileNamePath = os.path.join("/home", backupDomain, "backup/backupFileName")
+            pid = os.path.join("/home", backupDomain, "backup/pid")
+            ## read file name
 
-    def forceRunAWSBackup(self):
-        try:
-
-            plan = BackupPlan.objects.get(name=self.data['planName'])
-            bucketName = plan.bucket.strip('\n').strip(' ')
-            runTime = time.strftime("%d:%m:%Y")
-
-            aws_access_key_id, aws_secret_access_key = self.fetchAWSKeys()
-
-            client = boto3.client(
-                's3',
-                aws_access_key_id = aws_access_key_id,
-                aws_secret_access_key = aws_secret_access_key
-            )
-
-
-            config = TransferConfig(multipart_threshold=1024 * 25, max_concurrency=10,
-                                    multipart_chunksize=1024 * 25, use_threads=True)
-
-            ## Set Expiration for objects
             try:
+                fileName = open(backupFileNamePath, 'r').read()
+            except:
+                fileName = "Fetching.."
 
-                client.put_bucket_lifecycle_configuration(
-                    Bucket='string',
-                    LifecycleConfiguration={
-                        'Rules': [
-                            {
-                                'Expiration': {
-                                    'Days': plan.retention,
-                                    'ExpiredObjectDeleteMarker': True
-                                },
-                                'ID': plan.name,
-                                'Prefix': '',
-                                'Filter': {
-                                    'Prefix': plan.name + '/',
-                                },
-                                'Status': 'Enabled',
+            ## file name read ends
 
-                            },
-                        ]
-                    }
-                )
-            except BaseException, msg:
-                BackupLogs(owner=plan, timeStamp=time.strftime("%b %d %Y, %H:%M:%S"), level='ERROR',
-                           msg=str(msg)).save()
+            if os.path.exists(status):
+                status = open(status, 'r').read()
 
-            ##
+                if status.find("Completed") > -1:
 
-            userID = self.request.session['userID']
-            currentACL = ACLManager.loadedACL(userID)
+                    ### Removing Files
 
-            if currentACL['admin'] == 0:
-                BackupLogs(owner=plan, timeStamp=time.strftime("%b %d %Y, %H:%M:%S"), level='INFO',
-                           msg='Unauthorised user tried to run AWS Backups.').save()
-                return 0
+                    command = 'sudo rm -f ' + status
+                    ProcessUtilities.normalExecutioner(command)
 
-            BackupLogs(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
-                       msg='Starting backup process..').save()
+                    command = 'sudo rm -f ' + backupFileNamePath
+                    ProcessUtilities.normalExecutioner(command)
 
-            for items in plan.websitesinplan_set.all():
-                result = self.createBackup(items.domain)
-                if result[0]:
-                    key = plan.name + '/' + runTime + '/' + result[1].split('/')[-1] + ".tar.gz"
-                    client.upload_file(
-                        result[1] + ".tar.gz",
-                        bucketName,
-                        key,
-                        Config=config,
-                    )
-                    BackupLogs(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
-                               msg='Backup successful for ' + items.domain + '.').save()
-                else:
-                    BackupLogs(owner=plan, level='ERROR', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
-                               msg='Backup failed for ' + items.domain + '. Error: ' + result[1]).save()
+                    command = 'sudo rm -f ' + pid
+                    ProcessUtilities.normalExecutioner(command)
 
-            plan.lastRun = runTime
-            plan.save()
+                    return 1, tempStoragePath
 
-            BackupLogs(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
-                       msg='Backup Process Finished.').save()
-        except BaseException, msg:
-            logging.writeToFile(str(msg) + ' [S3Backups.runBackupPlan]')
-            plan = BackupPlan.objects.get(name=self.data['planName'])
-            BackupLogs(owner=plan, timeStamp=time.strftime("%b %d %Y, %H:%M:%S"), level='ERROR', msg=str(msg)).save()
+                elif status.find("[5009]") > -1:
+                    backupObs = Backups.objects.filter(fileName=fileName)
+                    for items in backupObs:
+                        items.delete()
+                    return 0, status
+
 
     def connectAccountDO(self):
         try:
@@ -518,13 +507,10 @@ class S3Backups(multi.Thread):
             credFile.write(self.data['credData'])
             credFile.close()
 
-            ##
-
-            self.setupCron()
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -572,7 +558,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg))
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
@@ -603,7 +589,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg) + ' [createPlanDO]')
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
@@ -642,7 +628,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -662,7 +648,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -697,7 +683,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -727,7 +713,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None, data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajaxPre(0, str(msg))
 
@@ -748,7 +734,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -774,7 +760,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -829,7 +815,7 @@ class S3Backups(multi.Thread):
                         ]
                     }
                 )
-            except BaseException, msg:
+            except BaseException as msg:
                 BackupLogsDO(owner=plan, timeStamp=time.strftime("%b %d %Y, %H:%M:%S"), level='ERROR',
                              msg=str(msg)).save()
 
@@ -856,8 +842,11 @@ class S3Backups(multi.Thread):
                         key,
                         Config=config,
                     )
+                    command = 'rm -f ' + result[1] + ".tar.gz"
+                    ProcessUtilities.executioner(command)
                     BackupLogsDO(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
                                  msg='Backup successful for ' + items.domain + '.').save()
+
                 else:
                     BackupLogsDO(owner=plan, level='ERROR', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
                                  msg='Backup failed for ' + items.domain + '. Error: ' + result[1]).save()
@@ -867,7 +856,7 @@ class S3Backups(multi.Thread):
 
             BackupLogsDO(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
                          msg='Backup Process Finished.').save()
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg) + ' [S3Backups.forceRunAWSBackupDO]')
             plan = BackupPlanDO.objects.get(name=self.data['planName'])
             BackupLogsDO(owner=plan, timeStamp=time.strftime("%b %d %Y, %H:%M:%S"), level='ERROR', msg=str(msg)).save()
@@ -889,11 +878,9 @@ class S3Backups(multi.Thread):
                                  secretKey=self.data['secretKey'])
             newNode.save()
 
-            self.setupCron()
-
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg) + ' [addMINIONode]')
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
@@ -929,7 +916,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -949,7 +936,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -979,7 +966,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg) + ' [createPlanDO]')
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
@@ -1018,7 +1005,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -1038,7 +1025,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -1064,7 +1051,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -1094,7 +1081,7 @@ class S3Backups(multi.Thread):
 
             try:
                 client.create_bucket(Bucket=plan.name.lower())
-            except BaseException, msg:
+            except BaseException as msg:
                 BackupLogsMINIO(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
                                 msg=str(msg)).save()
                 return 0
@@ -1123,6 +1110,8 @@ class S3Backups(multi.Thread):
                         key,
                         Config=config,
                     )
+                    command = 'rm -f ' + result[1] + ".tar.gz"
+                    ProcessUtilities.executioner(command)
                     BackupLogsMINIO(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
                                     msg='Backup successful for ' + items.domain + '.').save()
                 else:
@@ -1134,7 +1123,7 @@ class S3Backups(multi.Thread):
 
             BackupLogsMINIO(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
                             msg='Backup Process Finished.').save()
-        except BaseException, msg:
+        except BaseException as msg:
             logging.writeToFile(str(msg) + ' [S3Backups.forceRunAWSBackupMINIO]')
             plan = BackupPlanMINIO.objects.get(name=self.data['planName'])
             BackupLogsMINIO(owner=plan, timeStamp=time.strftime("%b %d %Y, %H:%M:%S"), level='ERROR',
@@ -1171,7 +1160,7 @@ class S3Backups(multi.Thread):
             final_json = json.dumps({'status': 1, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
 
@@ -1201,7 +1190,7 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None, data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajaxPre(0, str(msg))
 
@@ -1222,96 +1211,6 @@ class S3Backups(multi.Thread):
 
             return proc.ajax(1, None)
 
-        except BaseException, msg:
+        except BaseException as msg:
             proc = httpProc(self.request, None, None)
             return proc.ajax(0, str(msg))
-
-    def runAWSBackups(self):
-        try:
-            admin = Administrator.objects.get(pk=1)
-            self.request.session['userID'] = admin.pk
-
-            for plan in BackupPlan.objects.all():
-                lastRunDay = plan.lastRun.split(':')[0]
-                lastRunMonth = plan.lastRun.split(':')[1]
-
-                if plan.freq == 'Daily' and lastRunDay != time.strftime("%d"):
-                    self.data = {}
-                    self.data['planName'] = plan.name
-                    self.forceRunAWSBackup()
-                else:
-                    if lastRunMonth == time.strftime("%m"):
-                        days = int(time.strftime("%d")) - int(lastRunDay)
-                        if days >= 6:
-                            self.data = {}
-                            self.data['planName'] = plan.name
-                            self.forceRunAWSBackup()
-                    else:
-                        days = 30 - int(lastRunDay)
-                        days = days + int(time.strftime("%d"))
-                        if days >= 6:
-                            self.data = {}
-                            self.data['planName'] = plan.name
-                            self.forceRunAWSBackup()
-
-            for plan in BackupPlanDO.objects.all():
-                lastRunDay = plan.lastRun.split(':')[0]
-                lastRunMonth = plan.lastRun.split(':')[1]
-
-                if plan.freq == 'Daily' and lastRunDay != time.strftime("%d"):
-                    self.data = {}
-                    self.data['planName'] = plan.name
-                    self.forceRunAWSBackupDO()
-                else:
-                    if lastRunMonth == time.strftime("%m"):
-                        days = int(time.strftime("%d")) - int(lastRunDay)
-                        if days >= 6:
-                            self.data = {}
-                            self.data['planName'] = plan.name
-                            self.forceRunAWSBackupDO()
-                    else:
-                        days = 30 - int(lastRunDay)
-                        days = days + int(time.strftime("%d"))
-                        if days >= 6:
-                            self.data = {}
-                            self.data['planName'] = plan.name
-                            self.forceRunAWSBackupDO()
-
-            for plan in BackupPlanMINIO.objects.all():
-                lastRunDay = plan.lastRun.split(':')[0]
-                lastRunMonth = plan.lastRun.split(':')[1]
-
-                if plan.freq == 'Daily' and lastRunDay != time.strftime("%d"):
-                    self.data = {}
-                    self.data['planName'] = plan.name
-                    self.forceRunAWSBackupMINIO()
-                else:
-                    if lastRunMonth == time.strftime("%m"):
-                        days = int(time.strftime("%d")) - int(lastRunDay)
-                        if days >= 6:
-                            self.data = {}
-                            self.data['planName'] = plan.name
-                            self.forceRunAWSBackupMINIO()
-                    else:
-                        days = 30 - int(lastRunDay)
-                        days = days + int(time.strftime("%d"))
-                        if days >= 6:
-                            self.data = {}
-                            self.data['planName'] = plan.name
-                            self.forceRunAWSBackupMINIO()
-
-        except BaseException, msg:
-            logging.writeToFile(str(msg) + ' [S3Backups.runAWSBackups]')
-
-
-def main():
-    pathToFile = "/home/cyberpanel/" + str(randint(1000, 9999))
-    file = open(pathToFile, "w")
-    file.close()
-
-    finalData = json.dumps({'randomFile': pathToFile})
-    requests.post("http://localhost:5003/api/runAWSBackups", data=finalData, verify=False)
-
-
-if __name__ == "__main__":
-    main()

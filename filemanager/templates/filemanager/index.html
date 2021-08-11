@@ -41,10 +41,7 @@
 
 <nav id="navBar" class="navbar navbar-expand-lg navbar-light bg-light">
     <div class="header-logo">
-        <a href="#"><img src="{% static 'filemanager/images/fileManager.png' %}"> <span style="display: none" id="domainNameInitial">{{ domainName }}</span></a>
-            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
+        <a href="/websites/{{ domainName }}"><img src="{% static 'filemanager/images/fileManager.png' %}"> <span style="display: none" id="domainNameInitial">{{ domainName }}</span></a>
     </div>
     <!--- second bar ---->
 
@@ -328,7 +325,7 @@
                 <form action="/">
                     <div class="form-group">
                         <label>{% trans "New Folder Name" %}</label>
-                        <input ng-model="newFolderName" type="text" class="form-control" >
+                        <input ng-keypress="createFolderEnter($event)" ng-model="newFolderName" type="text" class="form-control" >
                         <small class="form-text text-muted">{% trans "Folder will be created in your current directory" %}</small>
                     </div>
                     <button type="button" ng-click="createNewFolder()" class="btn btn-primary">{% trans "Create Folder" %}</button>
@@ -372,7 +369,7 @@
                 <form action="/">
                     <div class="form-group">
                         <label>{% trans "New File Name" %}</label>
-                        <input ng-model="newFileName" type="text" class="form-control" >
+                        <input ng-keypress="createFileEnter($event)" ng-model="newFileName" type="text" class="form-control" >
                         <small class="form-text text-muted">{% trans "File will be created in your current directory, if it already exists it will not overwirte." %}</small>
                     </div>
                     <button type="button" ng-click="createNewFile()" class="btn btn-primary">{% trans "Create File" %}</button>
@@ -405,11 +402,18 @@
         <div class="modal-content">
             <div id="htmlEditorLable" class="modal-header">
                 <h5 class="modal-title" >{% trans "Confirm Deletion!" %} <img ng-hide="deleteLoading" src="{% static 'filemanager/images/loadingSmall.gif' %}"></h5>
+
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
             </div>
             <div class="modal-body">
+                <form action="/">
+                    <div class="form-group">
+                        <input ng-model="skipTrash" type="checkbox" value="">  Skip Trash Folder
+                        <small class="form-text text-muted">{% trans "Skip trash and permanently delete this file." %}</small>
+                    </div>
+                </form>
                 <p>Are you sure?</p>
             </div>
             <div class="modal-footer">
@@ -578,7 +582,7 @@
                 <form>
                     <div class="form-group">
                         <label>{% trans "New Name" %}</label>
-                        <input ng-model="newFileName" type="text" class="form-control">
+                        <input ng-keypress="renameEnter($event)" ng-model="newFileName" type="text" class="form-control">
                         <small class="form-text text-muted">{% trans "Enter new name of file!" %}</small>
                     </div>
                 </form>
@@ -655,6 +659,37 @@
 <!--- Permissions modal -->
 
 
+<!--- Restore modal -->
+
+<div id="showRestore" class="modal fade bd-example-modal-lg" tabindex="-1" role="dialog" aria-labelledby="myLargeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div id="htmlEditorLable" class="modal-header">
+                <h5 class="modal-title" >{% trans "Confirm Restore!" %} <img ng-hide="cyberPanelLoading" src="{% static 'filemanager/images/loadingSmall.gif' %}"></h5>
+
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form action="/">
+                    <div class="form-group">
+                        <small class="form-text text-muted">{% trans "This will restore file to its original location." %}</small>
+                    </div>
+                </form>
+                <p>Are you sure?</p>
+            </div>
+            <div class="modal-footer">
+                <button ng-click="restoreFinal()" type="button" class="btn btn-primary">{% trans "Restore" %}</button>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">{% trans "Close" %}</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!--- Restore modal -->
+
+
 
 
 
@@ -697,6 +732,8 @@
         <a style="border-bottom: 1px solid #007bff;" onclick="return false;" ng-click="showCompressionModal()" href="#"><li class="list-group-item"><i class="fa fa-compress" aria-hidden="true"></i>  {% trans "Compress" %}</li></a>
         <a style="border-bottom: 1px solid #007bff;" id="extractOnRight" onclick="return false;" ng-click="showExtractionModal()" href="#"><li class="list-group-item"><i class="fa fa-expand" aria-hidden="true"></i>  {% trans "Extract" %}</li></a>
         <a style="border-bottom: 1px solid #007bff;" id="editOnRight" onclick="return false;" ng-click="showHTMLEditorModal()" href="#"><li class="list-group-item"><i class="fa fa-pencil-square-o" aria-hidden="true"></i>  {% trans "Edit" %}</li></a>
+        <a style="border-bottom: 1px solid #007bff;" id="editOnRightCodeMirror" onclick="return false;" ng-click="editWithCodeMirror()" href="#"><li class="list-group-item"><i class="fa fa-pencil-square-o" aria-hidden="true"></i>  {% trans "Edit with CodeMirror" %}</li></a>
+        <a style="border-bottom: 1px solid #007bff;" id="restoreRight" onclick="return false;" ng-click="showRestoreModal()" href="#"><li class="list-group-item"><i class="fa fa-window-restore" aria-hidden="true"></i>  {% trans "Restore" %}</li></a>
     </ul>
 </div>
 

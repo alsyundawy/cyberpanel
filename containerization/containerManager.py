@@ -1,12 +1,10 @@
-from django.shortcuts import render
 from plogical.processUtilities import ProcessUtilities
 import threading as multi
 from plogical.acl import ACLManager
-from plogical.mailUtilities import mailUtilities
 import plogical.CyberCPLogFileWriter as logging
 from serverStatus.serverStatusUtil import ServerStatusUtil
 import os, stat
-
+from plogical.httpProc import httpProc
 
 class ContainerManager(multi.Thread):
     defaultConf = """group {groupName}{
@@ -44,7 +42,7 @@ class ContainerManager(multi.Thread):
                 self.addTrafficController()
             elif self.function == 'removeLimits':
                 self.removeLimits()
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + ' [ContainerManager.run]')
 
     @staticmethod
@@ -79,19 +77,11 @@ class ContainerManager(multi.Thread):
             ioConf = ioConf.replace('{net_cls}', str(net_cls))
 
             return ioConf
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
     def renderC(self):
-
-        userID = self.request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
-
-        if currentACL['admin'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
 
         data = {}
         data['OLS'] = 0
@@ -100,17 +90,20 @@ class ContainerManager(multi.Thread):
         if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
             data['OLS'] = 1
             data['notInstalled'] = 0
-            return render(self.request, 'containerization/notAvailable.html', data)
+            proc = httpProc(self.request, 'containerization/notAvailable.html', data, 'admin')
+            return proc.render()
         elif not ProcessUtilities.containerCheck():
             data['OLS'] = 0
             data['notInstalled'] = 1
-            return render(self.request, 'containerization/notAvailable.html', data)
+            proc = httpProc(self.request, 'containerization/notAvailable.html', data, 'admin')
+            return proc.render()
         else:
             if self.data == None:
                 self.data = {}
             self.data['OLS'] = 0
             self.data['notInstalled'] = 0
-            return render(self.request, self.templateName, self.data)
+            proc = httpProc(self.request, self.templateName, data, 'admin')
+            return proc.render()
 
     def submitContainerInstall(self):
         try:
@@ -125,26 +118,11 @@ class ContainerManager(multi.Thread):
                                                           1)
                 return 0
 
-            mailUtilities.checkHome()
+            execPath = "/usr/local/CyberCP/bin/python /usr/local/CyberCP/containerization/container.py"
+            execPath = execPath + " --function submitContainerInstall"
+            ProcessUtilities.outputExecutioner(execPath)
 
-            statusFile = open(ServerStatusUtil.lswsInstallStatusPath, 'w')
-
-            logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
-                                                      "Starting Packages Installation..\n", 1)
-
-            command = 'sudo yum install -y libcgroup-tools'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            command = 'sudo systemctl enable cgconfig'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            command = 'sudo systemctl enable cgred'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
-                                                      "Packages successfully installed.[200]\n", 1)
-
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath, str(msg) + ' [404].', 1)
 
     def restartServices(self):
@@ -181,7 +159,6 @@ class ContainerManager(multi.Thread):
         #        self.data['classID']) + ' protocol ip prio 10 handle 1: cgroup'
 
         command = 'sudo tc filter add dev eth0 parent 10: protocol ip prio 10 handle 1: cgroup'
-        #logging.CyberCPLogFileWriter.writeToFile(command)
         ProcessUtilities.executioner(command)
 
         self.restartServices()

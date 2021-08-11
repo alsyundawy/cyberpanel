@@ -1,5 +1,5 @@
 from django.conf.urls import url
-import views
+from . import views
 
 urlpatterns = [
     url(r'^managePowerDNS$', views.managePowerDNS, name='managePowerDNS'),
@@ -9,4 +9,7 @@ urlpatterns = [
 
     url(r'^fetchStatus$', views.fetchStatus, name='fetchStatus'),
     url(r'^saveStatus$', views.saveStatus, name='saveStatus'),
+
+    url(r'^manageApplications$', views.manageApplications, name='manageApplications'),
+    url(r'^removeInstall$', views.removeInstall, name='removeInstall'),
 ]

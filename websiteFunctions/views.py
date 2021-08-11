@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
-from django.shortcuts import render,redirect
+
+from django.shortcuts import redirect
 from django.http import HttpResponse
 from loginSystem.models import Administrator
 from loginSystem.views import loadLoginPage
 import json
-from plogical.website import WebsiteManager
+
+from plogical.httpProc import httpProc
+from websiteFunctions.website import WebsiteManager
 from websiteFunctions.pluginManager import pluginManager
+from django.views.decorators.csrf import csrf_exempt
 
 def loadWebsitesHome(request):
-    try:
-        val = request.session['userID']
-        admin = Administrator.objects.get(pk=val)
-        return render(request,'websiteFunctions/index.html',{"type":admin.type})
-    except KeyError:
-        return redirect(loadLoginPage)
+    val = request.session['userID']
+    admin = Administrator.objects.get(pk=val)
+    proc = httpProc(request, 'websiteFunctions/index.html',
+                    {"type": admin.type})
+    return proc.render()
 
 def createWebsite(request):
     try:
@@ -30,7 +32,7 @@ def modifyWebsite(request):
         userID = request.session['userID']
         wm = WebsiteManager()
         return wm.modifyWebsite(request, userID)
-    except BaseException, msg:
+    except BaseException as msg:
         return HttpResponse(str(msg))
 
     except KeyError:
@@ -41,6 +43,14 @@ def deleteWebsite(request):
         userID = request.session['userID']
         wm = WebsiteManager()
         return wm.deleteWebsite(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def CreateNewDomain(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.CreateNewDomain(request, userID)
     except KeyError:
         return redirect(loadLoginPage)
 
@@ -57,6 +67,14 @@ def listWebsites(request):
         userID = request.session['userID']
         wm = WebsiteManager()
         return wm.listWebsites(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def listChildDomains(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.listChildDomains(request, userID)
     except KeyError:
         return redirect(loadLoginPage)
 
@@ -116,11 +134,35 @@ def searchWebsites(request):
     except KeyError:
         return redirect(loadLoginPage)
 
+def searchChilds(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.searchChilds(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
 def getFurtherAccounts(request):
     try:
         userID = request.session['userID']
         wm = WebsiteManager()
         return wm.getFurtherAccounts(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchWebsitesList(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchWebsitesList(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchChildDomainsMain(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchChildDomainsMain(userID, json.loads(request.body))
     except KeyError:
         return redirect(loadLoginPage)
 
@@ -160,6 +202,16 @@ def submitDomainDeletion(request):
             return result
 
         return coreResult
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def convertDomainToSite(request):
+    try:
+
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.convertDomainToSite(userID, request)
 
     except KeyError:
         return redirect(loadLoginPage)
@@ -565,6 +617,7 @@ def setupGitRepo(request):
     except KeyError:
         return redirect(loadLoginPage)
 
+@csrf_exempt
 def gitNotify(request, domain):
     try:
         wm = WebsiteManager(domain)
@@ -596,10 +649,280 @@ def installPrestaShop(request, domain):
     except KeyError:
         return redirect(loadLoginPage)
 
+def installMagento(request, domain):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager(domain)
+        return wm.installMagento(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def magentoInstall(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.magentoInstall(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def installMautic(request, domain):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager(domain)
+        return wm.installMautic(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def mauticInstall(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.mauticInstall(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
 def prestaShopInstall(request):
     try:
         userID = request.session['userID']
         wm = WebsiteManager()
         return wm.prestaShopInstall(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def sshAccess(request, domain):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager(domain)
+        return wm.sshAccess(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+def saveSSHAccessChanges(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.saveSSHAccessChanges(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+def setupStaging(request, domain):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager(domain)
+        return wm.setupStaging(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+def startCloning(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.startCloning(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+def syncToMaster(request, domain, childDomain):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager(domain)
+        return wm.syncToMaster(request, userID, None, childDomain)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def startSync(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.startSync(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+### Manage GIT
+
+def manageGIT(request, domain):
+    try:
+
+        if not request.GET._mutable:
+            request.GET._mutable = True
+
+        request.GET['domain'] = domain
+
+        userID = request.session['userID']
+        wm = WebsiteManager(domain)
+        return wm.manageGIT(request, userID)
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchFolderDetails(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchFolderDetails(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def initRepo(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.initRepo(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def setupRemote(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.setupRemote(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def changeGitBranch(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.changeGitBranch(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def createNewBranch(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.createNewBranch(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def commitChanges(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.commitChanges(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def gitPull(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.gitPull(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def gitPush(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.gitPush(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def attachRepoGIT(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.attachRepoGIT(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def removeTracking(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.removeTracking(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchGitignore(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchGitignore(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def saveGitIgnore(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.saveGitIgnore(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchCommits(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchCommits(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchFiles(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchFiles(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchChangesInFile(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchChangesInFile(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def saveGitConfigurations(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.saveGitConfigurations(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchGitLogs(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.fetchGitLogs(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def getSSHConfigs(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.getSSHConfigs(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def deleteSSHKey(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.deleteSSHKey(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def addSSHKey(request):
+    try:
+        userID = request.session['userID']
+        wm = WebsiteManager()
+        return wm.addSSHKey(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+@csrf_exempt
+def webhook(request, domain):
+    try:
+        wm = WebsiteManager()
+        return wm.webhook(domain, json.loads(request.body))
     except KeyError:
         return redirect(loadLoginPage)

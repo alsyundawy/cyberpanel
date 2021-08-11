@@ -57,6 +57,16 @@
                     </div>
                 </div>
 
+                <div ng-hide="emailDetails" class="form-group">
+                    <label class="col-sm-3 control-label">{% trans "Forwarding Options" %} </label>
+                    <div class="col-sm-6">
+                        <select ng-change="selectForwardingEmail()" ng-model="forwardingOption" class="form-control">
+                                <option>Forward to email</option>
+                                <option>Pipe to program</option>
+                        </select>
+                    </div>
+                </div>
+
             <!------ Modification form that appears after a click --------------->
 
             <div ng-hide="notifyBox" class="form-group">
@@ -88,7 +98,7 @@
                     </div>
 
                     <div class="col-sm-4">
-                        <input placeholder="{% trans 'Destination' %}"   type="email" class="form-control" ng-model="destinationEmail" required>
+                        <input placeholder="{% trans 'Destination' %} {% trans 'or path to the program' %}"   type="text" class="form-control" ng-model="destinationEmail" required>
                     </div>
 
 

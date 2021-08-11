@@ -4,14 +4,15 @@ from loginSystem.views import loadLoginPage
 import json
 from random import randint
 import time
+from plogical.httpProc import httpProc
 from .models import EmailMarketing, EmailLists, EmailsInList, EmailJobs
 from websiteFunctions.models import Websites
-from emailMarketing import emailMarketing as EM
+from .emailMarketing import emailMarketing as EM
 from math import ceil
 import smtplib
 from .models import SMTPHosts, EmailTemplate
 from loginSystem.models import Administrator
-from emACL import emACL
+from .emACL import emACL
 
 class EmailMarketingManager:
 
@@ -20,18 +21,8 @@ class EmailMarketingManager:
         self.domain = domain
 
     def emailMarketing(self):
-        try:
-            userID = self.request.session['userID']
-            currentACL = ACLManager.loadedACL(userID)
-
-            if currentACL['admin'] == 1:
-                pass
-            else:
-                return ACLManager.loadError()
-
-            return render(self.request, 'emailMarketing/emailMarketing.html')
-        except KeyError, msg:
-            return redirect(loadLoginPage)
+        proc = httpProc(self.request, 'emailMarketing/emailMarketing.html', None, 'admin')
+        return proc.render()
 
     def fetchUsers(self):
         try:
@@ -74,7 +65,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1, 'data': json_data}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -103,7 +94,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -122,8 +113,9 @@ class EmailMarketingManager:
             if emACL.checkIfEMEnabled(admin.userName) == 0:
                 return ACLManager.loadError()
 
-            return render(self.request, 'emailMarketing/createEmailList.html', {'domain': self.domain})
-        except KeyError, msg:
+            proc = httpProc(self.request, 'emailMarketing/createEmailList.html', {'domain': self.domain})
+            return proc.render()
+        except KeyError as msg:
             return redirect(loadLoginPage)
 
     def submitEmailList(self):
@@ -157,7 +149,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1, 'tempStatusPath': extraArgs['tempStatusPath']}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -167,6 +159,7 @@ class EmailMarketingManager:
             userID = self.request.session['userID']
             currentACL = ACLManager.loadedACL(userID)
             admin = Administrator.objects.get(pk=userID)
+
             if ACLManager.checkOwnership(self.domain, admin, currentACL) == 1:
                 pass
             else:
@@ -177,9 +170,135 @@ class EmailMarketingManager:
 
             listNames = emACL.getEmailsLists(self.domain)
 
-            return render(self.request, 'emailMarketing/manageLists.html', {'listNames': listNames, 'domain': self.domain})
-        except KeyError, msg:
+            proc = httpProc(self.request, 'emailMarketing/manageLists.html', {'listNames': listNames, 'domain': self.domain})
+            return proc.render()
+
+        except KeyError as msg:
             return redirect(loadLoginPage)
+
+    def configureVerify(self):
+        try:
+
+            userID = self.request.session['userID']
+            currentACL = ACLManager.loadedACL(userID)
+            admin = Administrator.objects.get(pk=userID)
+
+            if ACLManager.checkOwnership(self.domain, admin, currentACL) == 1:
+                pass
+            else:
+                return ACLManager.loadError()
+
+            if emACL.checkIfEMEnabled(admin.userName) == 0:
+                return ACLManager.loadError()
+
+            proc = httpProc(self.request, 'emailMarketing/configureVerify.html',
+                            {'domain': self.domain})
+            return proc.render()
+
+        except KeyError as msg:
+            return redirect(loadLoginPage)
+
+    def fetchVerifyLogs(self):
+        try:
+
+            userID = self.request.session['userID']
+            currentACL = ACLManager.loadedACL(userID)
+            admin = Administrator.objects.get(pk=userID)
+
+            data = json.loads(self.request.body)
+
+            self.listName = data['listName']
+            recordsToShow = int(data['recordsToShow'])
+            page = int(str(data['page']).strip('\n'))
+
+            emailList = EmailLists.objects.get(listName=self.listName)
+
+            if ACLManager.checkOwnership(emailList.owner.domain, admin, currentACL) == 1:
+                pass
+            else:
+                return ACLManager.loadErrorJson('status', 0)
+
+            logsLen = emailList.validationlog_set.all().count()
+
+            from s3Backups.s3Backups import S3Backups
+
+            pagination = S3Backups.getPagination(logsLen, recordsToShow)
+            endPageNumber, finalPageNumber = S3Backups.recordsPointer(page, recordsToShow)
+            finalLogs = emailList.validationlog_set.all()[finalPageNumber:endPageNumber]
+
+            json_data = "["
+            checker = 0
+            counter = 0
+
+            from plogical.backupSchedule import backupSchedule
+
+            for log in emailList.validationlog_set.all()[finalPageNumber:endPageNumber]:
+                if log.status == backupSchedule.INFO:
+                    status = 'INFO'
+                else:
+                    status = 'ERROR'
+
+                dic = {
+                    'status': status, "message": log.message
+                }
+
+                if checker == 0:
+                    json_data = json_data + json.dumps(dic)
+                    checker = 1
+                else:
+                    json_data = json_data + ',' + json.dumps(dic)
+
+                counter = counter + 1
+
+            json_data = json_data + ']'
+
+            totalEmail = emailList.emailsinlist_set.all().count()
+            verified = emailList.verified
+            notVerified = emailList.notVerified
+
+            data_ret = {'status': 1, 'logs': json_data, 'pagination': pagination, 'totalEmails': totalEmail, 'verified': verified, 'notVerified': notVerified}
+            json_data = json.dumps(data_ret)
+            return HttpResponse(json_data)
+
+
+        except BaseException as msg:
+            data_ret = {'status': 0, 'error_message': str(msg)}
+            json_data = json.dumps(data_ret)
+            return HttpResponse(json_data)
+
+    def saveConfigureVerify(self):
+        try:
+
+            userID = self.request.session['userID']
+            admin = Administrator.objects.get(pk=userID)
+
+            if emACL.checkIfEMEnabled(admin.userName) == 0:
+                return ACLManager.loadErrorJson()
+
+            data = json.loads(self.request.body)
+
+            domain = data['domain']
+
+            configureVerifyPath = '/home/cyberpanel/configureVerify'
+
+            import os
+
+            if not os.path.exists(configureVerifyPath):
+                os.mkdir(configureVerifyPath)
+
+            finalPath = '%s/%s' % (configureVerifyPath, domain)
+
+            writeToFile = open(finalPath, 'w')
+            writeToFile.write(self.request.body.decode())
+            writeToFile.close()
+
+            data_ret = {"status": 1}
+            json_data = json.dumps(data_ret)
+            return HttpResponse(json_data)
+        except BaseException as msg:
+            final_dic = {'status': 0, 'error_message': str(msg)}
+            final_json = json.dumps(final_dic)
+            return HttpResponse(final_json)
 
     def fetchEmails(self):
         try:
@@ -205,7 +324,7 @@ class EmailMarketingManager:
             if currentACL['admin'] == 1:
                 pass
             elif emailList.owner.id != userID:
-                ACLManager.loadErrorJson()
+                return ACLManager.loadErrorJson()
 
             emails = emailList.emailsinlist_set.all()
 
@@ -251,7 +370,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1, 'data': json_data, 'pagination': pagination}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -274,14 +393,14 @@ class EmailMarketingManager:
             if currentACL['admin'] == 1:
                 pass
             elif delList.owner.id != userID:
-                ACLManager.loadErrorJson()
+                return ACLManager.loadErrorJson()
 
             delList.delete()
 
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -304,7 +423,7 @@ class EmailMarketingManager:
             if currentACL['admin'] == 1:
                 pass
             elif delList.owner.id != userID:
-                ACLManager.loadErrorJson()
+                return ACLManager.loadErrorJson()
 
             em = EM('verificationJob', extraArgs)
             em.start()
@@ -314,7 +433,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -337,14 +456,14 @@ class EmailMarketingManager:
             if currentACL['admin'] == 1:
                 pass
             elif delEmail.owner.owner.id != userID:
-                ACLManager.loadErrorJson()
+                return ACLManager.loadErrorJson()
 
             delEmail.delete()
 
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -369,8 +488,11 @@ class EmailMarketingManager:
 
             for items in emailLists:
                 listNames.append(items.listName)
-            return render(self.request, 'emailMarketing/manageSMTPHosts.html', {'listNames': listNames, 'domain': self.domain})
-        except KeyError, msg:
+
+            proc = httpProc(self.request, 'emailMarketing/manageSMTPHosts.html',
+                            {'listNames': listNames, 'domain': self.domain})
+            return proc.render()
+        except KeyError as msg:
             return redirect(loadLoginPage)
 
     def saveSMTPHost(self):
@@ -390,13 +512,17 @@ class EmailMarketingManager:
             smtpPassword = data['smtpPassword']
 
             if SMTPHosts.objects.count() == 0:
-                admin = Administrator.objects.get(pk=1)
+                admin = Administrator.objects.get(userName='admin')
                 defaultHost = SMTPHosts(owner=admin, host='localhost', port=25, userName='None', password='None')
                 defaultHost.save()
 
             try:
-                verifyLogin = smtplib.SMTP(smtpHost, int(smtpPort))
-                verifyLogin.login(smtpUserName, smtpPassword)
+                verifyLogin = smtplib.SMTP(str(smtpHost), int(smtpPort))
+
+                if int(smtpPort) == 587:
+                    verifyLogin.starttls()
+
+                verifyLogin.login(str(smtpUserName), str(smtpPassword))
 
                 admin = Administrator.objects.get(pk=userID)
 
@@ -420,7 +546,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -463,7 +589,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1, 'data': json_data}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -488,7 +614,7 @@ class EmailMarketingManager:
                 if currentACL['admin'] == 1:
                     pass
                 elif delHost.owner.id != userID:
-                    ACLManager.loadErrorJson()
+                    return ACLManager.loadErrorJson()
                 delHost.delete()
                 data_ret = {"status": 1, 'message': 'Successfully deleted.'}
                 json_data = json.dumps(data_ret)
@@ -496,8 +622,12 @@ class EmailMarketingManager:
             else:
                 try:
                     verifyHost = SMTPHosts.objects.get(id=id)
-                    verifyLogin = smtplib.SMTP(verifyHost.host, int(verifyHost.port))
-                    verifyLogin.login(verifyHost.userName, verifyHost.password)
+                    verifyLogin = smtplib.SMTP(str(verifyHost.host), int(verifyHost.port))
+
+                    if int(verifyHost.port) == 587:
+                        verifyLogin.starttls()
+
+                    verifyLogin.login(str(verifyHost.userName), str(verifyHost.password))
 
                     data_ret = {"status": 1, 'message': 'Login successful.'}
                     json_data = json.dumps(data_ret)
@@ -515,7 +645,7 @@ class EmailMarketingManager:
                     json_data = json.dumps(data_ret)
                     return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -528,8 +658,10 @@ class EmailMarketingManager:
             if emACL.checkIfEMEnabled(admin.userName) == 0:
                 return ACLManager.loadErrorJson()
 
-            return render(self.request, 'emailMarketing/composeMessages.html')
-        except KeyError, msg:
+            proc = httpProc(self.request, 'emailMarketing/composeMessages.html',
+                            None)
+            return proc.render()
+        except KeyError as msg:
             return redirect(loadLoginPage)
 
     def saveEmailTemplate(self):
@@ -557,7 +689,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -580,8 +712,12 @@ class EmailMarketingManager:
             Data['templateNames'] = templateNames
             Data['hostNames'] = hostNames
             Data['listNames'] = listNames
-            return render(self.request, 'emailMarketing/sendEmails.html', Data)
-        except KeyError, msg:
+
+            proc = httpProc(self.request, 'emailMarketing/sendEmails.html',
+                            Data)
+            return proc.render()
+
+        except KeyError as msg:
             return redirect(loadLoginPage)
 
     def templatePreview(self):
@@ -597,7 +733,7 @@ class EmailMarketingManager:
                 return ACLManager.loadError()
 
             return HttpResponse(template.emailMessage)
-        except KeyError, msg:
+        except KeyError as msg:
             return redirect(loadLoginPage)
 
     def fetchJobs(self):
@@ -647,7 +783,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1, 'data': json_data}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -684,12 +820,12 @@ class EmailMarketingManager:
             em = EM('startEmailJob', extraArgs)
             em.start()
 
-            time.sleep(2)
+            time.sleep(5)
 
             data_ret = {"status": 1, 'tempStatusPath': extraArgs['tempStatusPath']}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -714,7 +850,7 @@ class EmailMarketingManager:
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
@@ -734,11 +870,10 @@ class EmailMarketingManager:
             data_ret = {"status": 1}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             final_dic = {'status': 0, 'error_message': str(msg)}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
-
 
     def remove(self, listName, emailAddress):
         try:

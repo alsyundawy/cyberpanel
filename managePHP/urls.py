@@ -1,5 +1,5 @@
 from django.conf.urls import url
-import views
+from . import views
 
 urlpatterns = [
     url(r'^$', views.loadPHPHome, name='loadPHPHome'),
@@ -12,6 +12,7 @@ urlpatterns = [
     url(r'^savePHPConfigBasic', views.savePHPConfigBasic, name='savePHPConfigBasic'),
     url(r'^getCurrentAdvancedPHPConfig', views.getCurrentAdvancedPHPConfig, name='getCurrentAdvancedPHPConfig'),
     url(r'^savePHPConfigAdvance', views.savePHPConfigAdvance, name='savePHPConfigAdvance'),
+    url(r'^restartPHP', views.restartPHP, name='restartPHP'),
 
 
 ]

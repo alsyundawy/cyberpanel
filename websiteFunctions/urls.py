@@ -1,14 +1,19 @@
 from django.conf.urls import url
-import views
+from . import views
 
 
 urlpatterns = [
     url(r'^$', views.loadWebsitesHome, name='loadWebsitesHome'),
     url(r'^createWebsite$', views.createWebsite, name='createWebsite'),
     url(r'^listWebsites$', views.listWebsites, name='listWebsites'),
+    url(r'^listChildDomains$', views.listChildDomains, name='listChildDomains'),
     url(r'^modifyWebsite$', views.modifyWebsite, name='modifyWebsite'),
     url(r'^deleteWebsite$', views.deleteWebsite, name='deleteWebsite'),
     url(r'^siteState$', views.siteState, name='siteState'),
+
+    ##
+
+    url(r'^CreateNewDomain$', views.CreateNewDomain, name='CreateNewDomain'),
 
 
     # Website modification url
@@ -17,6 +22,9 @@ urlpatterns = [
     url(r'^submitWebsiteCreation$', views.submitWebsiteCreation, name='submitWebsiteCreation'),
     url(r'^submitWebsiteDeletion$', views.submitWebsiteDeletion, name='submitWebsiteDeletion'),
     url(r'^submitWebsiteListing$', views.getFurtherAccounts, name='submitWebsiteListing'),
+    url(r'^fetchWebsitesList$', views.fetchWebsitesList, name='fetchWebsitesList'),
+    url(r'^fetchChildDomainsMain$', views.fetchChildDomainsMain, name='fetchChildDomainsMain'),
+    url(r'^convertDomainToSite$', views.convertDomainToSite, name='convertDomainToSite'),
     url(r'^searchWebsites$', views.searchWebsites, name='searchWebsites'),
     url(r'^submitWebsiteModification$', views.deleteWebsite, name='submitWebsiteModification'),
     url(r'^submitWebsiteStatus$', views.submitWebsiteStatus, name='submitWebsiteStatus'),
@@ -48,7 +56,7 @@ urlpatterns = [
     url(r'^fetchDomains$', views.fetchDomains, name='submitDomainCreation'),
     url(r'^changePHP$', views.changePHP, name='changePHP'),
     url(r'^submitDomainDeletion$', views.submitDomainDeletion, name='submitDomainDeletion'),
-
+    url(r'^searchChilds$', views.searchChilds, name='searchChilds'),
     # crons
 
     url(r'^listCron$',views.listCron,name="listCron"),
@@ -87,14 +95,65 @@ urlpatterns = [
     url(r'^prestaShopInstall$', views.prestaShopInstall, name='prestaShopInstall'),
     url(r'^(?P<domain>(.*))/installPrestaShop$', views.installPrestaShop, name='installPrestaShop'),
 
+    ## magento
+
+    url(r'^(?P<domain>(.*))/installMagento$', views.installMagento, name='installMagento'),
+    url(r'^magentoInstall$', views.magentoInstall, name='magentoInstall'),
+
+    ## mautic
+
+    url(r'^(?P<domain>(.*))/installMautic$', views.installMautic, name='installMautic'),
+    url(r'^mauticInstall$', views.mauticInstall, name='mauticInstall'),
+
 
     ## Git
     url(r'^(?P<domain>(.*))/setupGit$', views.setupGit, name='setupGit'),
     url(r'^setupGitRepo$', views.setupGitRepo, name='setupGitRepo'),
 
+    ## Set up SSH Access
+    url(r'^(?P<domain>(.*))/sshAccess$', views.sshAccess, name='sshAccess'),
+    url(r'^saveSSHAccessChanges$', views.saveSSHAccessChanges, name='saveSSHAccessChanges'),
+
+    ## Staging Enviroment
+
+    url(r'^(?P<domain>(.*))/setupStaging$', views.setupStaging, name='setupStaging'),
+    url(r'^startCloning$', views.startCloning, name='startCloning'),
+    url(r'^(?P<domain>(.*))/(?P<childDomain>(.*))/syncToMaster$', views.syncToMaster, name='syncToMaster'),
+    url(r'^startSync$', views.startSync, name='startSync'),
+
+
     url(r'^(?P<domain>(.*))/gitNotify$', views.gitNotify, name='gitNotify'),
     url(r'^detachRepo$', views.detachRepo, name='detachRepo'),
     url(r'^changeBranch$', views.changeBranch, name='changeBranch'),
+
+    ### Manage GIT
+
+    url(r'^(?P<domain>(.*))/manageGIT$', views.manageGIT, name='manageGIT'),
+    url(r'^(?P<domain>(.*))/webhook$', views.webhook, name='webhook'),
+    url(r'^fetchFolderDetails$', views.fetchFolderDetails, name='fetchFolderDetails'),
+    url(r'^initRepo$', views.initRepo, name='initRepo'),
+    url(r'^setupRemote$', views.setupRemote, name='setupRemote'),
+    url(r'^changeGitBranch$', views.changeGitBranch, name='changeGitBranch'),
+    url(r'^createNewBranch$', views.createNewBranch, name='createNewBranch'),
+    url(r'^commitChanges$', views.commitChanges, name='commitChanges'),
+    url(r'^gitPull$', views.gitPull, name='gitPull'),
+    url(r'^gitPush$', views.gitPush, name='gitPush'),
+    url(r'^attachRepoGIT$', views.attachRepoGIT, name='attachRepoGIT'),
+    url(r'^removeTracking$', views.removeTracking, name='removeTracking'),
+    url(r'^fetchGitignore$', views.fetchGitignore, name='fetchGitignore'),
+    url(r'^saveGitIgnore$', views.saveGitIgnore, name='saveGitIgnore'),
+    url(r'^fetchCommits$', views.fetchCommits, name='fetchCommits'),
+    url(r'^fetchFiles$', views.fetchFiles, name='fetchFiles'),
+    url(r'^fetchChangesInFile$', views.fetchChangesInFile, name='fetchChangesInFile'),
+    url(r'^saveGitConfigurations$', views.saveGitConfigurations, name='saveGitConfigurations'),
+    url(r'^fetchGitLogs$', views.fetchGitLogs, name='fetchGitLogs'),
+
+    ### SSH Configs
+
+    url(r'^getSSHConfigs$', views.getSSHConfigs, name='getSSHConfigs'),
+    url(r'^deleteSSHKey$', views.deleteSSHKey, name='deleteSSHKey'),
+    url(r'^addSSHKey$', views.addSSHKey, name='addSSHKey'),
+
 
     ## Catch all for domains
     url(r'^(?P<domain>(.*))/(?P<childDomain>(.*))$', views.launchChild, name='launchChild'),

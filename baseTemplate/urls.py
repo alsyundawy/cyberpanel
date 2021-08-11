@@ -1,5 +1,5 @@
 from django.conf.urls import url
-import views
+from . import views
 
 urlpatterns = [
     url(r'^$', views.renderBase, name='index'),
@@ -12,7 +12,5 @@ urlpatterns = [
 
     url(r'^UpgradeStatus',views.upgradeStatus, name='UpgradeStatus'),
     url(r'^upgradeVersion',views.upgradeVersion, name='upgradeVersion'),
-
-
 
 ]

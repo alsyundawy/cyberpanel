@@ -1,11 +1,8 @@
-#!/usr/local/CyberCP/bin/python2
-from __future__ import division
-import os
+#!/usr/local/CyberCP/bin/python
+
 import os.path
 import sys
 import django
-import mimetypes
-
 sys.path.append('/usr/local/CyberCP')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "CyberCP.settings")
 django.setup()
@@ -25,8 +22,7 @@ import requests
 from plogical.processUtilities import ProcessUtilities
 from serverStatus.serverStatusUtil import ServerStatusUtil
 import threading as multi
-from plogical.mailUtilities import mailUtilities
-
+from plogical.httpProc import httpProc
 
 # Use default socket to connect
 class ContainerManager(multi.Thread):
@@ -40,16 +36,8 @@ class ContainerManager(multi.Thread):
         self.data = data
 
     def renderDM(self):
-
-        userID = self.request.session['userID']
-        currentACL = ACLManager.loadedACL(userID)
-
-        if currentACL['admin'] == 1:
-            pass
-        else:
-            return ACLManager.loadError()
-
-        return render(self.request, self.templateName, self.data)
+        proc = httpProc(self.request, self.templateName, self.data, 'admin')
+        return proc.render()
 
     def run(self):
         try:
@@ -58,7 +46,7 @@ class ContainerManager(multi.Thread):
             elif self.function == 'restartGunicorn':
                 command = 'sudo systemctl restart gunicorn.socket'
                 ProcessUtilities.executioner(command)
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile( str(msg) + ' [ContainerManager.run]')
 
     @staticmethod
@@ -69,7 +57,7 @@ class ContainerManager(multi.Thread):
                 return 0
             else:
                 return 1
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
@@ -80,107 +68,66 @@ class ContainerManager(multi.Thread):
             if ACLManager.currentContextPermission(currentACL, 'createContainer') == 0:
                 return ACLManager.loadError()
 
+            writeToFile = open(ServerStatusUtil.lswsInstallStatusPath, 'w')
+            writeToFile.close()
 
-            mailUtilities.checkHome()
-
-            statusFile = open(ServerStatusUtil.lswsInstallStatusPath, 'w')
-
-            logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
-                                                      "Starting Docker Installation..\n", 1)
-
-            command = "sudo adduser docker"
-            ServerStatusUtil.executioner(command, statusFile)
-
-            command = 'sudo groupadd docker'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            command = 'sudo usermod -aG docker docker'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            command = 'sudo usermod -aG docker cyberpanel'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
-                command = 'sudo yum install -y docker'
-            else:
-                command = 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io'
-
-            if not ServerStatusUtil.executioner(command, statusFile):
-                logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
-                                                          "Failed to install Docker. [404]\n", 1)
-                return 0
-
-            command = 'sudo systemctl enable docker'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            command = 'sudo systemctl start docker'
-            ServerStatusUtil.executioner(command, statusFile)
-
-            logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
-                                                      "Docker successfully installed.[200]\n", 1)
+            execPath = "/usr/local/CyberCP/bin/python /usr/local/CyberCP/dockerManager/dockerInstall.py"
+            ProcessUtilities.executioner(execPath)
 
             time.sleep(2)
 
-            cm = ContainerManager(self.name, 'restartGunicorn')
-            cm.start()
-
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath, str(msg) + ' [404].', 1)
 
     def createContainer(self, request=None, userID=None, data=None):
+        client = docker.from_env()
+        dockerAPI = docker.APIClient()
+
+        adminNames = ACLManager.loadAllUsers(userID)
+        tag = request.GET.get('tag')
+        image = request.GET.get('image')
+        tag = tag.split(" (")[0]
+
+        if "/" in image:
+            name = image.split("/")[0] + "." + image.split("/")[1]
+        else:
+            name = image
+
         try:
-            admin = Administrator.objects.get(pk=userID)
-            if admin.acl.adminStatus != 1:
-                return ACLManager.loadError()
+            inspectImage = dockerAPI.inspect_image(image + ":" + tag)
+        except docker.errors.ImageNotFound:
+            val = request.session['userID']
+            admin = Administrator.objects.get(pk=val)
+            proc = httpProc(request, 'dockerManager/images.html', {"type": admin.type,
+                                                                 'image': image,
+                                                                 'tag': tag})
+            return proc.render()
 
-            client = docker.from_env()
-            dockerAPI = docker.APIClient()
+        envList = {};
+        if 'Env' in inspectImage['Config']:
+            for item in inspectImage['Config']['Env']:
+                if '=' in item:
+                    splitedItem = item.split('=', 1)
+                    print(splitedItem)
+                    envList[splitedItem[0]] = splitedItem[1]
+                else:
+                    envList[item] = ""
 
-            adminNames = ACLManager.loadAllUsers(userID)
-            tag = request.GET.get('tag')
-            image = request.GET.get('image')
-            tag = tag.split(" (")[0]
+        portConfig = {};
+        if 'ExposedPorts' in inspectImage['Config']:
+            for item in inspectImage['Config']['ExposedPorts']:
+                portDef = item.split('/')
+                portConfig[portDef[0]] = portDef[1]
 
-            if "/" in image:
-                name = image.split("/")[0] + "." + image.split("/")[1]
-            else:
-                name = image
+        if image is None or image is '' or tag is None or tag is '':
+            return redirect(loadImages)
 
-            try:
-                inspectImage = dockerAPI.inspect_image(image + ":" + tag)
-            except docker.errors.ImageNotFound:
-                val = request.session['userID']
-                admin = Administrator.objects.get(pk=val)
-                return render(request, 'dockerManager/images.html', {"type": admin.type,
-                                                                     'image': image,
-                                                                     'tag': tag})
+        Data = {"ownerList": adminNames, "image": image, "name": name, "tag": tag, "portConfig": portConfig,
+                "envList": envList}
 
-            envList = {};
-            if 'Env' in inspectImage['Config']:
-                for item in inspectImage['Config']['Env']:
-                    if '=' in item:
-                        splitedItem = item.split('=', 1)
-                        print splitedItem
-                        envList[splitedItem[0]] = splitedItem[1]
-                    else:
-                        envList[item] = ""
-
-            portConfig = {};
-            if 'ExposedPorts' in inspectImage['Config']:
-                for item in inspectImage['Config']['ExposedPorts']:
-                    portDef = item.split('/')
-                    portConfig[portDef[0]] = portDef[1]
-
-            if image is None or image is '' or tag is None or tag is '':
-                return redirect(loadImages)
-
-            Data = {"ownerList": adminNames, "image": image, "name": name, "tag": tag, "portConfig": portConfig,
-                    "envList": envList}
-
-            return render(request, 'dockerManager/runContainer.html', Data)
-
-        except BaseException, msg:
-            return HttpResponse(str(msg))
+        template = 'dockerManager/runContainer.html'
+        proc = httpProc(request, template, Data, 'admin')
+        return proc.render()
 
     def loadContainerHome(self, request=None, userID=None, data=None):
         name = self.name
@@ -233,51 +180,52 @@ class ContainerManager(multi.Thread):
             data['memoryUsage'] = 0
             data['cpuUsage'] = 0
 
-        return render(request, 'dockerManager/viewContainer.html', data)
+        template = 'dockerManager/viewContainer.html'
+        proc = httpProc(request, template, data, 'admin')
+        return proc.render()
 
     def listContainers(self, request=None, userID=None, data=None):
-        try:
-            client = docker.from_env()
-            dockerAPI = docker.APIClient()
+        client = docker.from_env()
+        dockerAPI = docker.APIClient()
 
-            currentACL = ACLManager.loadedACL(userID)
-            containers = ACLManager.findAllContainers(currentACL, userID)
+        currentACL = ACLManager.loadedACL(userID)
+        containers = ACLManager.findAllContainers(currentACL, userID)
 
-            allContainers = client.containers.list()
-            containersList = []
-            showUnlistedContainer = True
+        allContainers = client.containers.list()
+        containersList = []
+        showUnlistedContainer = True
 
-            # TODO: Add condition to show unlisted Containers only if user has admin level access
+        # TODO: Add condition to show unlisted Containers only if user has admin level access
 
-            unlistedContainers = []
-            for container in allContainers:
-                if container.name not in containers:
-                    unlistedContainers.append(container)
+        unlistedContainers = []
+        for container in allContainers:
+            if container.name not in containers:
+                unlistedContainers.append(container)
 
-            if not unlistedContainers:
-                showUnlistedContainer = False
+        if not unlistedContainers:
+            showUnlistedContainer = False
 
-            adminNames = ACLManager.loadAllUsers(userID)
+        adminNames = ACLManager.loadAllUsers(userID)
 
-            pages = float(len(containers)) / float(10)
-            pagination = []
+        pages = float(len(containers)) / float(10)
+        pagination = []
 
-            if pages <= 1.0:
-                pages = 1
-                pagination.append('<li><a href="\#"></a></li>')
-            else:
-                pages = ceil(pages)
-                finalPages = int(pages) + 1
+        if pages <= 1.0:
+            pages = 1
+            pagination.append('<li><a href="\#"></a></li>')
+        else:
+            pages = ceil(pages)
+            finalPages = int(pages) + 1
 
-                for i in range(1, finalPages):
-                    pagination.append('<li><a href="\#">' + str(i) + '</a></li>')
+            for i in range(1, finalPages):
+                pagination.append('<li><a href="\#">' + str(i) + '</a></li>')
 
-            return render(request, 'dockerManager/listContainers.html', {"pagination": pagination,
-                                                                         "unlistedContainers": unlistedContainers,
-                                                                         "adminNames": adminNames,
-                                                                         "showUnlistedContainer": showUnlistedContainer})
-        except BaseException, msg:
-            return HttpResponse(str(msg))
+        template = 'dockerManager/listContainers.html'
+        proc = httpProc(request, template, {"pagination": pagination,
+                                            "unlistedContainers": unlistedContainers,
+                                            "adminNames": adminNames,
+                                            "showUnlistedContainer": showUnlistedContainer}, 'admin')
+        return proc.render()
 
     def getContainerLogs(self, userID=None, data=None):
         try:
@@ -292,14 +240,14 @@ class ContainerManager(multi.Thread):
             dockerAPI = docker.APIClient()
 
             container = client.containers.get(name)
-            logs = container.logs()
+            logs = container.logs().decode("utf-8")
 
             data_ret = {'containerLogStatus': 1, 'containerLog': logs, 'error_message': "None"}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'containerLogStatus': 0, 'containerLog': 'Error', 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -327,7 +275,7 @@ class ContainerManager(multi.Thread):
 
             # Formatting envList for usage
             envDict = {}
-            for key, value in envList.iteritems():
+            for key, value in envList.items():
                 if (value['name'] != '') or (value['value'] != ''):
                     envDict[value['name']] = value['value']
 
@@ -341,7 +289,7 @@ class ContainerManager(multi.Thread):
                     portConfig[item] = data[item]
 
             volumes = {}
-            for index, volume in volList.iteritems():
+            for index, volume in volList.items():
                 volumes[volume['src']] = {'bind': volume['dest'],
                                              'mode': 'rw'}
 
@@ -362,7 +310,7 @@ class ContainerManager(multi.Thread):
                 container = client.containers.create(**containerArgs)
             except Exception as err:
                 if "port is already allocated" in err:  # We need to delete container if port is not available
-                    print "Deleting container"
+                    print("Deleting container")
                     container.remove(force=True)
                 data_ret = {'createContainerStatus': 0, 'error_message': str(err)}
                 json_data = json.dumps(data_ret)
@@ -385,7 +333,7 @@ class ContainerManager(multi.Thread):
             return HttpResponse(json_data)
 
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'createContainerStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -413,7 +361,7 @@ class ContainerManager(multi.Thread):
 
             try:
                 image = client.images.pull(image, tag=tag)
-                print image.id
+                print(image.id)
             except docker.errors.APIError as msg:
                 data_ret = {'installImageStatus': 0, 'error_message': str(msg)}
                 json_data = json.dumps(data_ret)
@@ -424,7 +372,7 @@ class ContainerManager(multi.Thread):
             return HttpResponse(json_data)
 
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'installImageStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -494,7 +442,7 @@ class ContainerManager(multi.Thread):
                 json_data = json.dumps(data_ret)
                 return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             if called:
                 return str(msg)
             else:
@@ -514,7 +462,7 @@ class ContainerManager(multi.Thread):
             final_dic = {'listContainerStatus': 1, 'error_message': "None", "data": json_data}
             final_json = json.dumps(final_dic)
             return HttpResponse(final_json)
-        except BaseException, msg:
+        except BaseException as msg:
             dic = {'listContainerStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(dic)
             return HttpResponse(json_data)
@@ -588,7 +536,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'containerActionStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -618,7 +566,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'containerStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -648,7 +596,7 @@ class ContainerManager(multi.Thread):
             response['Content-Disposition'] = 'attachment; filename="' + name + '.tar"'
             return response
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'containerStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -684,7 +632,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'containerTopStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -725,7 +673,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'assignContainerStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -751,7 +699,7 @@ class ContainerManager(multi.Thread):
                 json_data = json.dumps(data_ret)
                 return HttpResponse(json_data)
 
-            print json.dumps(matches)
+            print(json.dumps(matches))
 
             for image in matches:
                 if "/" in image['name']:
@@ -763,7 +711,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'searchImageStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -771,8 +719,6 @@ class ContainerManager(multi.Thread):
     def images(self, request=None, userID=None, data=None):
         try:
             admin = Administrator.objects.get(pk=userID)
-            if admin.acl.adminStatus != 1:
-                return ACLManager.loadError()
 
             client = docker.from_env()
             dockerAPI = docker.APIClient()
@@ -800,7 +746,7 @@ class ContainerManager(multi.Thread):
                         getTag = tag.split(":")
                         if len(getTag) == 2:
                             tags.append(getTag[1])
-                    print tags
+                    print(tags)
                     if name in names:
                         images[name]['tags'].extend(tags)
                     else:
@@ -811,19 +757,15 @@ class ContainerManager(multi.Thread):
                 except:
                     continue
 
-            return render(request, 'dockerManager/images.html', {"images": images, "test": ''})
+            template = 'dockerManager/images.html'
+            proc = httpProc(request, template, {"images": images, "test": ''}, 'admin')
+            return proc.render()
 
-        except BaseException, msg:
+        except BaseException as msg:
             return HttpResponse(str(msg))
 
     def manageImages(self, request=None, userID=None, data=None):
         try:
-            currentACL = ACLManager.loadedACL(userID)
-
-            if currentACL['admin'] == 1:
-                pass
-            else:
-                return ACLManager.loadError()
 
             client = docker.from_env()
             dockerAPI = docker.APIClient()
@@ -845,9 +787,11 @@ class ContainerManager(multi.Thread):
                 except:
                     continue
 
-            return render(request, 'dockerManager/manageImages.html', {"images": images})
+            template = 'dockerManager/manageImages.html'
+            proc = httpProc(request, template, {"images": images}, 'admin')
+            return proc.render()
 
-        except BaseException, msg:
+        except BaseException as msg:
             return HttpResponse(str(msg))
 
     def getImageHistory(self, userID=None, data=None):
@@ -873,7 +817,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'imageHistoryStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -894,7 +838,7 @@ class ContainerManager(multi.Thread):
                     action = client.images.prune()
                 else:
                     action = client.images.remove(name)
-                print action
+                print(action)
             except docker.errors.APIError as err:
                 data_ret = {'removeImageStatus': 0, 'error_message': str(err)}
                 json_data = json.dumps(data_ret)
@@ -908,7 +852,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'removeImageStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -954,7 +898,7 @@ class ContainerManager(multi.Thread):
             con.save()
 
             return 0
-        except BaseException, msg:
+        except BaseException as msg:
             return str(msg)
 
     def saveContainerSettings(self, userID=None, data=None):
@@ -1004,12 +948,12 @@ class ContainerManager(multi.Thread):
             if 'envConfirmation' in data and data['envConfirmation']:
                 # Formatting envList for usage
                 envDict = {}
-                for key, value in envList.iteritems():
+                for key, value in envList.items():
                     if (value['name'] != '') or (value['value'] != ''):
                         envDict[value['name']] = value['value']
 
                 volumes = {}
-                for index, volume in volList.iteritems():
+                for index, volume in volList.items():
                     if volume['src'] == '' or volume['dest'] == '':
                         continue
                     volumes[volume['src']] = {'bind': volume['dest'],
@@ -1040,7 +984,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'saveSettingsStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -1090,7 +1034,7 @@ class ContainerManager(multi.Thread):
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'recreateContainerStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -1110,7 +1054,7 @@ class ContainerManager(multi.Thread):
             else:
                 image2 = "library/" + image
 
-            print image
+            print(image)
             registryData = requests.get('https://registry.hub.docker.com/v2/repositories/' + image2 + '/tags',
                                         {'page': page}).json()
 
@@ -1121,7 +1065,7 @@ class ContainerManager(multi.Thread):
             data_ret = {'getTagsStatus': 1, 'list': tagList, 'next': registryData['next'], 'error_message': None}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'getTagsStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)

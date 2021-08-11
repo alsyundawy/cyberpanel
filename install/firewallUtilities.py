@@ -13,10 +13,10 @@ class FirewallUtilities:
                 inst.preFlightsChecks.stdOut("Failed to apply rule: " + command + " Error #" + str(res), 1)
                 return 0
 
-        except OSError, msg:
+        except OSError as msg:
             inst.preFlightsChecks.stdOut("Failed to apply rule: " + command + " Error: " + str(msg), 1)
             return 0
-        except ValueError, msg:
+        except ValueError as msg:
             inst.preFlightsChecks.stdOut("Failed to apply rule: " + command + " Error: " + str(msg), 1)
             return 0
 
@@ -25,6 +25,9 @@ class FirewallUtilities:
 
     @staticmethod
     def addRule(proto,port):
+
+        print('Adding port: %s' % (port))
+
         if port == "21":
             command = "sudo firewall-cmd --add-service=ftp --permanent"
         else:
@@ -56,6 +59,7 @@ class FirewallUtilities:
 
     @staticmethod
     def deleteRule(proto, port):
+
         if port=="21":
             command = "sudo firewall-cmd --remove-service=ftp --permanent"
         else:

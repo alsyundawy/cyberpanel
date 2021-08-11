@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 from django.shortcuts import redirect
 from loginSystem.views import loadLoginPage
-from emailMarketingManager import EmailMarketingManager
+from .emailMarketingManager import EmailMarketingManager
 # Create your views here.
 
 
@@ -51,6 +51,30 @@ def manageLists(request, domain):
         userID = request.session['userID']
         emm = EmailMarketingManager(request, domain)
         return emm.manageLists()
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def configureVerify(request, domain):
+    try:
+        userID = request.session['userID']
+        emm = EmailMarketingManager(request, domain)
+        return emm.configureVerify()
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def saveConfigureVerify(request):
+    try:
+        userID = request.session['userID']
+        emm = EmailMarketingManager(request)
+        return emm.saveConfigureVerify()
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchVerifyLogs(request):
+    try:
+        userID = request.session['userID']
+        emm = EmailMarketingManager(request)
+        return emm.fetchVerifyLogs()
     except KeyError:
         return redirect(loadLoginPage)
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.db import models
 from loginSystem.models import Administrator
@@ -13,6 +13,7 @@ class BackupPlan(models.Model):
     retention = models.IntegerField()
     type = models.CharField(max_length=5, default='AWS')
     lastRun = models.CharField(max_length=50, default='0:0:0')
+    config = models.TextField(default='')
 
 class WebsitesInPlan(models.Model):
     owner = models.ForeignKey(BackupPlan,on_delete=models.CASCADE)

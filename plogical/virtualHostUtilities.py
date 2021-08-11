@@ -1,42 +1,126 @@
-#!/usr/local/CyberCP/bin/python2
+#!/usr/local/CyberCP/bin/python
 import os
 import os.path
 import sys
 import django
+#PACKAGE_PARENT = '..'
+#SCRIPT_DIR = os.path.dirname(os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__))))
+#sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
+
 sys.path.append('/usr/local/CyberCP')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "CyberCP.settings")
+from random import randint
+
 django.setup()
-import shutil
 import argparse
-import installUtilities
-import sslUtilities
-from os.path import join
-from os import listdir, rmdir
-from shutil import move
+from plogical import installUtilities
+from plogical import sslUtilities
 from multiprocessing import Process
-from websiteFunctions.models import Websites, ChildDomains, aliasDomains
-from loginSystem.models import Administrator
-from packages.models import Package
 import subprocess
 import shlex
 from plogical.mailUtilities import mailUtilities
-import CyberCPLogFileWriter as logging
-from dnsUtilities import DNS
-from vhost import vhost
-from applicationInstaller import ApplicationInstaller
-from acl import ACLManager
-from processUtilities import ProcessUtilities
+from plogical import CyberCPLogFileWriter as logging
+from plogical.dnsUtilities import DNS
+from plogical.vhost import vhost
+from plogical.acl import ACLManager
+from plogical.processUtilities import ProcessUtilities
+from ApachController.ApacheController import ApacheController
+from ApachController.ApacheVhosts import ApacheVhost
+from managePHP.phpManager import PHPManager
+
+try:
+    from websiteFunctions.models import Websites, ChildDomains, aliasDomains
+    from loginSystem.models import Administrator
+    from packages.models import Package
+    from CLManager.models import CLPackages
+except:
+    pass
+
 
 ## If you want justice, you have come to the wrong place.
 
 
 class virtualHostUtilities:
+    apache = 1
+    ols = 2
+    lsws = 3
 
     Server_root = "/usr/local/lsws"
     cyberPanel = "/usr/local/CyberCP"
+    redisConf = '/usr/local/lsws/conf/dvhost_redis.conf'
+    vhostConfPath = '/usr/local/lsws/conf'
+
+    @staticmethod
+    def setupAutoDiscover(mailDomain, tempStatusPath, virtualHostName, admin):
+
+        if mailDomain:
+            logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Creating mail child domain..,80')
+            childDomain = 'mail.%s' % (virtualHostName)
+            childPath = '/home/%s/public_html/%s' % (virtualHostName, childDomain)
+
+            result = virtualHostUtilities.createDomain(virtualHostName, childDomain, 'PHP 7.2', childPath, 1, 0, 0,
+                                              admin.userName, 0, "/home/cyberpanel/" + str(randint(1000, 9999)))
+
+            if result[0] == 0:
+                sslUtilities.issueSSLForDomain(virtualHostName, admin.email, childPath)
+
+            ## update dovecot conf to enable auto-discover
+
+            dovecotPath = '/etc/dovecot/dovecot.conf'
+
+            if os.path.exists(dovecotPath):
+                dovecotContent = open(dovecotPath, 'r').read()
+
+                if dovecotContent.find('/live/%s/' % (childDomain)) == -1:
+                    content = """\nlocal_name %s {
+        ssl_cert = </etc/letsencrypt/live/%s/fullchain.pem
+        ssl_key = </etc/letsencrypt/live/%s/privkey.pem
+}\n""" % (childDomain, childDomain, childDomain)
+
+                    writeToFile = open(dovecotPath, 'a')
+                    writeToFile.write(content)
+                    writeToFile.close()
+
+                command = 'systemctl restart dovecot'
+                ProcessUtilities.executioner(command)
+
+                ### Update postfix configurations
+
+                postFixPath = '/etc/postfix/main.cf'
+
+                postFixContent = open(postFixPath, 'r').read()
+
+                if postFixContent.find('tls_server_sni_maps') == -1:
+                    writeToFile = open(postFixPath, 'a')
+                    writeToFile.write('\ntls_server_sni_maps = hash:/etc/postfix/vmail_ssl.map\n')
+                    writeToFile.close()
+
+                postfixMapFile = '/etc/postfix/vmail_ssl.map'
+                try:
+                    postfixMapFileContent = open(postfixMapFile, 'r').read()
+                except:
+                    postfixMapFileContent = ''
+
+                if postfixMapFileContent.find('/live/%s/' % (childDomain)) == -1:
+
+                    mapContent = '%s /etc/letsencrypt/live/%s/privkey.pem /etc/letsencrypt/live/%s/fullchain.pem\n' % (
+                        childDomain, childDomain, childDomain)
+
+                    writeToFile = open(postfixMapFile, 'a')
+                    writeToFile.write(mapContent)
+                    writeToFile.close()
+
+                command = 'postmap -F hash:/etc/postfix/vmail_ssl.map'
+
+                ProcessUtilities.executioner(command)
+
+                command = 'systemctl restart postfix'
+                ProcessUtilities.executioner(command)
+
     @staticmethod
     def createVirtualHost(virtualHostName, administratorEmail, phpVersion, virtualHostUser, ssl,
-                          dkimCheck, openBasedir, websiteOwner, packageName, tempStatusPath = '/home/cyberpanel/fakePath'):
+                          dkimCheck, openBasedir, websiteOwner, packageName, apache,
+                          tempStatusPath='/home/cyberpanel/fakePath', mailDomain = None, LimitsCheck = 1):
         try:
 
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Running some checks..,0')
@@ -45,99 +129,155 @@ class virtualHostUtilities:
 
             admin = Administrator.objects.get(userName=websiteOwner)
 
-            if ACLManager.websitesLimitCheck(admin, 1) == 0:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'You\'ve reached maximum websites limit as a reseller. [404]')
-                return 0, 'You\'ve reached maximum websites limit as a reseller.'
+            if LimitsCheck:
 
-            ####### Limitations Check End
+                if ACLManager.websitesLimitCheck(admin, 1) == 0:
 
-            if Websites.objects.filter(domain=virtualHostName).count() > 0:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This website already exists. [404]')
-                return 0, "This website already exists."
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'You\'ve reached maximum websites limit as a reseller. [404]')
+                    return 0, 'You\'ve reached maximum websites limit as a reseller.'
 
-            if ChildDomains.objects.filter(domain=virtualHostName).count() > 0:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This website already exists as child domain. [404]')
-                return 0, "This website already exists as child domain."
+                ####### Limitations Check End
 
-            ####### Limitations Check End
+                if Websites.objects.filter(domain=virtualHostName).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This website already exists. [404]')
+                    return 0, "This website already exists."
 
-            logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Creating DNS records..,10')
+                if Websites.objects.filter(domain=virtualHostName.lstrip('www.')).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This website already exists. [404]')
+                    return 0, "This website already exists."
 
-            ##### Zone creation
+                if ChildDomains.objects.filter(domain=virtualHostName).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'This website already exists as child domain. [404]')
+                    return 0, "This website already exists as child domain."
 
-            DNS.dnsTemplate(virtualHostName, admin)
+                if ChildDomains.objects.filter(domain=virtualHostName.lstrip('www.')).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'This website already exists as child domain. [404]')
+                    return 0, "This website already exists as child domain."
 
-            ## Zone creation
+                ####### Limitations Check End
 
-            logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Setting up directories..,25')
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Creating DNS records..,10')
 
-            if vhost.checkIfVirtualHostExists(virtualHostName) == 1:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Virtual Host Directory already exists. [404]')
-                return 0, "Virtual Host Directory already exists!"
+                ##### Zone creation
 
-            if vhost.checkIfAliasExists(virtualHostName) == 1:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This domain exists as Alias. [404]')
-                return 0, "This domain exists as Alias."
+                DNS.dnsTemplate(virtualHostName, admin)
 
-            if dkimCheck == 1:
-                if mailUtilities.checkIfDKIMInstalled() == 0:
-                    raise BaseException("OpenDKIM is not installed, install OpenDKIM from DKIM Manager.")
+                ## Zone creation
 
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Setting up directories..,25')
+
+                if vhost.checkIfVirtualHostExists(virtualHostName) == 1:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'Virtual Host Directory already exists. [404]')
+                    return 0, "Virtual Host Directory already exists!"
+
+                if vhost.checkIfAliasExists(virtualHostName) == 1:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This domain exists as Alias. [404]')
+                    return 0, "This domain exists as Alias."
+
+            postfixPath = '/home/cyberpanel/postfix'
+
+            if os.path.exists(postfixPath):
                 retValues = mailUtilities.setupDKIM(virtualHostName)
                 if retValues[0] == 0:
                     raise BaseException(retValues[1])
 
             retValues = vhost.createDirectoryForVirtualHost(virtualHostName, administratorEmail,
-                                                                           virtualHostUser, phpVersion, openBasedir)
+                                                            virtualHostUser, phpVersion, openBasedir)
             if retValues[0] == 0:
                 raise BaseException(retValues[1])
 
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Creating configurations..,50')
 
-            retValues = vhost.createConfigInMainVirtualHostFile(virtualHostName)
-            if retValues[0] == 0:
-                raise BaseException(retValues[1])
+            if not os.path.exists(virtualHostUtilities.redisConf):
+                retValues = vhost.createConfigInMainVirtualHostFile(virtualHostName)
+                if retValues[0] == 0:
+                    raise BaseException(retValues[1])
 
             selectedPackage = Package.objects.get(packageName=packageName)
 
-            website = Websites(admin=admin, package=selectedPackage, domain=virtualHostName,
-                               adminEmail=administratorEmail,
-                               phpSelection=phpVersion, ssl=ssl, externalApp=virtualHostUser)
+            if LimitsCheck:
+                website = Websites(admin=admin, package=selectedPackage, domain=virtualHostName,
+                                   adminEmail=administratorEmail,
+                                   phpSelection=phpVersion, ssl=ssl, externalApp=virtualHostUser)
 
-            website.save()
-
+                website.save()
 
             if ssl == 1:
                 sslPath = "/home/" + virtualHostName + "/public_html"
                 logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Setting up SSL..,70')
-                installUtilities.installUtilities.reStartLiteSpeed()
+                if not os.path.exists(virtualHostUtilities.redisConf):
+                    installUtilities.installUtilities.reStartLiteSpeed()
                 retValues = sslUtilities.issueSSLForDomain(virtualHostName, administratorEmail, sslPath)
                 if retValues[0] == 0:
                     raise BaseException(retValues[1])
                 else:
-                    installUtilities.installUtilities.reStartLiteSpeed()
+                    if not os.path.exists(virtualHostUtilities.redisConf):
+                        installUtilities.installUtilities.reStartLiteSpeed()
 
             if ssl == 0:
-                installUtilities.installUtilities.reStartLiteSpeed()
+                if not os.path.exists(virtualHostUtilities.redisConf):
+                    installUtilities.installUtilities.reStartLiteSpeed()
 
             vhost.finalizeVhostCreation(virtualHostName, virtualHostUser)
 
+            ## Check If Apache is requested
+
+            confPath = vhost.Server_root + "/conf/vhosts/" + virtualHostName
+            completePathToConfigFile = confPath + "/vhost.conf"
+
+            if apache:
+                if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+                    if ApacheController.checkIfApacheInstalled() == 0:
+                        result = ApacheController.setupApache(tempStatusPath)
+                        if result[0] == 0:
+                            raise BaseException(result[1])
+
+                    result = ApacheVhost.setupApacheVhost(administratorEmail, virtualHostUser, virtualHostUser,
+                                                          phpVersion, virtualHostName)
+                    if result[0] == 0:
+                        raise BaseException(result[1])
+                    else:
+                        ApacheVhost.perHostVirtualConfOLS(completePathToConfigFile, administratorEmail)
+                        installUtilities.installUtilities.reStartLiteSpeed()
+                        php = PHPManager.getPHPString(phpVersion)
+                        command = "systemctl restart php%s-php-fpm" % (php)
+                        ProcessUtilities.normalExecutioner(command)
+
             ## Create Configurations ends here
 
-            logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'DKIM Setup..,90')
-
+            logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'DKIM Setup..,70')
 
             ## DKIM Check
 
-            if dkimCheck == 1:
-                DNS.createDKIMRecords(virtualHostName)
+            postFixPath = '/home/cyberpanel/postfix'
+
+            if os.path.exists(postFixPath):
+                if dkimCheck == 1:
+                    DNS.createDKIMRecords(virtualHostName)
+
+            CLPath = '/etc/sysconfig/cloudlinux'
+
+            if os.path.exists(CLPath):
+                command = '/usr/share/cloudlinux/hooks/post_modify_user.py create --username %s --owner %s' % (virtualHostUser, admin.userName)
+                ProcessUtilities.executioner(command)
+
+            ### For autodiscover of mail clients.
+
+            virtualHostUtilities.setupAutoDiscover(mailDomain, tempStatusPath, virtualHostName, admin)
+
+            ###
 
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Website successfully created. [200]')
 
             return 1, 'None'
 
-        except BaseException, msg:
-            vhost.deleteVirtualHostConfigurations(virtualHostName)
+        except BaseException as msg:
+            if ACLManager.FindIfChild() == 0:
+                vhost.deleteVirtualHostConfigurations(virtualHostName)
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [createVirtualHost]")
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, str(msg) + " [404]")
             return 0, str(msg)
@@ -149,27 +289,40 @@ class virtualHostUtilities:
             retValues = sslUtilities.issueSSLForDomain(virtualHost, adminEmail, path)
 
             if retValues[0] == 0:
-                print "0," + str(retValues[1])
+                print("0," + str(retValues[1]))
+                logging.CyberCPLogFileWriter.writeToFile(str(retValues[1]))
                 return 0, str(retValues[1])
 
             installUtilities.installUtilities.reStartLiteSpeed()
 
-            print "1,None"
+            command = 'systemctl restart postfix'
+            ProcessUtilities.executioner(command)
+
+            command = 'systemctl restart dovecot'
+            ProcessUtilities.executioner(command)
+
+            print("1,None")
             return 1, None
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [issueSSL]")
-            print "0," + str(msg)
+            print("0," + str(msg))
             return 0, str(msg)
 
     @staticmethod
-    def getAccessLogs(fileName, page):
+    def getAccessLogs(fileName, page, externalApp):
         try:
 
-            numberOfTotalLines = int(subprocess.check_output(["wc", "-l", fileName]).split(" ")[0])
+            if os.path.islink(fileName):
+                print("0, %s file is symlinked." % (fileName))
+                return 0
+
+            groupName = 'nobody'
+
+            numberOfTotalLines = int(ProcessUtilities.outputExecutioner('wc -l %s' % (fileName), groupName).split(" ")[0])
 
             if numberOfTotalLines < 25:
-                data = subprocess.check_output(["cat", fileName])
+                data = ProcessUtilities.outputExecutioner('cat %s' % (fileName), groupName)
             else:
                 if page == 1:
                     end = numberOfTotalLines
@@ -178,8 +331,7 @@ class virtualHostUtilities:
                         start = 1
                     startingAndEnding = "'" + str(start) + "," + str(end) + "p'"
                     command = "sed -n " + startingAndEnding + " " + fileName
-                    proc = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE)
-                    data = proc.stdout.read()
+                    data = ProcessUtilities.outputExecutioner(command, groupName)
                 else:
                     end = numberOfTotalLines - ((page - 1) * 25)
                     start = end - 24
@@ -187,22 +339,28 @@ class virtualHostUtilities:
                         start = 1
                     startingAndEnding = "'" + str(start) + "," + str(end) + "p'"
                     command = "sed -n " + startingAndEnding + " " + fileName
-                    proc = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE)
-                    data = proc.stdout.read()
-            print data
-        except BaseException, msg:
+                    data = ProcessUtilities.outputExecutioner(command, groupName)
+            print(data)
+            return data
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [getAccessLogs]")
-            print "1,None"
+            print("1,None")
+            return "1,None"
 
     @staticmethod
-    def getErrorLogs(fileName, page):
+    def getErrorLogs(fileName, page, externalApp):
         try:
 
-            numberOfTotalLines = int(subprocess.check_output(["wc", "-l", fileName]).split(" ")[0])
+            if os.path.islink(fileName):
+                print("0, %s file is symlinked." % (fileName))
+                return 0
+
+            numberOfTotalLines = int(
+                ProcessUtilities.outputExecutioner('wc -l %s' % (fileName), externalApp).split(" ")[0])
 
             if numberOfTotalLines < 25:
-                data = subprocess.check_output(["cat", fileName])
+                data = ProcessUtilities.outputExecutioner('cat %s' % (fileName), externalApp)
             else:
                 if page == 1:
                     end = numberOfTotalLines
@@ -211,8 +369,7 @@ class virtualHostUtilities:
                         start = 1
                     startingAndEnding = "'" + str(start) + "," + str(end) + "p'"
                     command = "sed -n " + startingAndEnding + " " + fileName
-                    proc = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE)
-                    data = proc.stdout.read()
+                    data = ProcessUtilities.outputExecutioner(command, externalApp)
                 else:
                     end = numberOfTotalLines - ((page - 1) * 25)
                     start = end - 24
@@ -220,13 +377,14 @@ class virtualHostUtilities:
                         start = 1
                     startingAndEnding = "'" + str(start) + "," + str(end) + "p'"
                     command = "sed -n " + startingAndEnding + " " + fileName
-                    proc = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE)
-                    data = proc.stdout.read()
-            print data
-        except BaseException, msg:
+                    data = ProcessUtilities.outputExecutioner(command, externalApp)
+            print(data)
+            return data
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [getErrorLogs]")
-            print "1,None"
+            print("1,None")
+            return "1,None"
 
     @staticmethod
     def saveVHostConfigs(fileName, tempPath):
@@ -243,16 +401,20 @@ class virtualHostUtilities:
 
             installUtilities.installUtilities.reStartLiteSpeed()
 
-            print "1,None"
+            print("1,None")
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [saveVHostConfigs]")
-            print "0," + str(msg)
+            print("0," + str(msg))
 
     @staticmethod
     def saveRewriteRules(virtualHost, fileName, tempPath):
         try:
+
+            if os.path.islink(fileName):
+                print("0, .htaccess file is symlinked.")
+                return 0
 
             vhost.addRewriteRules(virtualHost, fileName)
 
@@ -260,177 +422,43 @@ class virtualHostUtilities:
             vhostFile.write(open(tempPath, "r").read())
             vhostFile.close()
 
-            if os.path.exists(tempPath):
-                os.remove(tempPath)
+            try:
+                if os.path.exists(tempPath):
+                    os.remove(tempPath)
+            except:
+                pass
 
-            installUtilities.installUtilities.reStartLiteSpeed()
+            print("1,None")
 
-            print "1,None"
-
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [saveRewriteRules]")
-            print "0," + str(msg)
-
-    @staticmethod
-    def installWordPress(domainName, finalPath, virtualHostUser, dbName, dbUser, dbPassword):
-        try:
-
-            FNULL = open(os.devnull, 'w')
-
-            if not os.path.exists(finalPath):
-                os.makedirs(finalPath)
-
-            ## checking for directories/files
-
-            dirFiles = os.listdir(finalPath)
-
-            if len(dirFiles) == 1:
-                if dirFiles[0] == ".well-known":
-                    pass
-                else:
-                    print "0,Target directory should be empty before installation, otherwise data loss could occur."
-                    return
-            elif len(dirFiles) == 0:
-                pass
-            else:
-                print "0,Target directory should be empty before installation, otherwise data loss could occur."
-                return
-
-            ## Get wordpress
-
-
-            if not os.path.exists("latest.tar.gz"):
-                command = 'wget --no-check-certificate http://wordpress.org/latest.tar.gz -O latest.tar.gz'
-                cmd = shlex.split(command)
-                res = subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-
-            command = 'tar -xzvf latest.tar.gz -C ' + finalPath
-
-            cmd = shlex.split(command)
-
-            res = subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-
-            ## Get plugin
-
-            if not os.path.exists("litespeed-cache.1.1.5.1.zip"):
-                command = 'wget --no-check-certificate https://downloads.wordpress.org/plugin/litespeed-cache.1.1.5.1.zip'
-
-                cmd = shlex.split(command)
-
-                res = subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-
-            command = 'unzip litespeed-cache.1.1.5.1.zip -d ' + finalPath
-
-            cmd = shlex.split(command)
-
-            res = subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-
-            root = finalPath
-
-            for filename in listdir(join(root, 'wordpress')):
-                move(join(root, 'wordpress', filename), join(root, filename))
-
-            rmdir(root + "wordpress")
-
-            shutil.copytree(finalPath + "litespeed-cache", finalPath + "wp-content/plugins/litespeed-cache")
-            shutil.rmtree(finalPath + "litespeed-cache")
-
-            ## edit config file
-
-            wpconfigfile = finalPath + "wp-config-sample.php"
-
-            data = open(wpconfigfile, "r").readlines()
-
-            writeDataToFile = open(wpconfigfile, "w")
-
-            defDBName = "define('DB_NAME', '" + dbName + "');" + "\n"
-            defDBUser = "define('DB_USER', '" + dbUser + "');" + "\n"
-            defDBPassword = "define('DB_PASSWORD', '" + dbPassword + "');" + "\n"
-
-            for items in data:
-                if items.find("DB_NAME") > -1:
-                    if items.find("database_name_here") > -1:
-                        writeDataToFile.writelines(defDBName)
-                elif items.find("DB_USER") > -1:
-                    if items.find("username_here") > -1:
-                        writeDataToFile.writelines(defDBUser)
-                elif items.find("DB_PASSWORD") > -1:
-                    writeDataToFile.writelines(defDBPassword)
-                else:
-                    writeDataToFile.writelines(items)
-
-            writeDataToFile.close()
-
-            os.rename(wpconfigfile, finalPath + 'wp-config.php')
-
-            command = "chown -R " + virtualHostUser + ":" + virtualHostUser + " " + "/home/" + domainName + "/public_html/"
-
-            cmd = shlex.split(command)
-
-            res = subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-
-            vhost.addRewriteRules(domainName)
-
-            installUtilities.installUtilities.reStartLiteSpeed()
-
-            print "1,None"
-
-
-        except BaseException, msg:
-            # remove the downloaded files
-            try:
-
-                shutil.rmtree(finalPath)
-            except:
-                logging.CyberCPLogFileWriter.writeToFile("shutil.rmtree(finalPath)")
-
-            homeDir = "/home/" + domainName + "/public_html"
-
-            if not os.path.exists(homeDir):
-                FNULL = open(os.devnull, 'w')
-                os.mkdir(homeDir)
-                command = "chown -R " + virtualHostUser + ":" + virtualHostUser + " " + homeDir
-                cmd = shlex.split(command)
-                res = subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-
-            print "0," + str(msg)
-            return
-
-    @staticmethod
-    def installJoomla(domainName, finalPath, virtualHostUser, dbName, dbUser, dbPassword, username, password, prefix,
-                      sitename, tempStatusPath):
-        try:
-
-            extraArgs = {}
-            extraArgs['domainName'] = domainName
-            extraArgs['finalPath'] = finalPath
-            extraArgs['virtualHostUser'] = virtualHostUser
-            extraArgs['dbName'] = dbName
-            extraArgs['dbUser'] = dbUser
-            extraArgs['dbPassword'] = dbPassword
-            extraArgs['username'] = username
-            extraArgs['password'] = password
-            extraArgs['prefix'] = prefix
-            extraArgs['sitename'] = sitename
-            extraArgs['tempStatusPath'] = tempStatusPath
-
-            background = ApplicationInstaller('joomla', extraArgs)
-            background.start()
-
-
-        except BaseException, msg:
-            logging.CyberCPLogFileWriter.writeToFile(str(msg) + ' [installJoomla]')
+            print("0," + str(msg))
 
     @staticmethod
     def issueSSLForHostName(virtualHost, path):
         try:
 
-            destPrivKey = "/usr/local/lscp/key.pem"
-            destCert = "/usr/local/lscp/cert.pem"
+            destPrivKey = "/usr/local/lscp/conf/key.pem"
+            destCert = "/usr/local/lscp/conf/cert.pem"
+
+            lswsAdminPrivKey = "/usr/local/lsws/admin/conf/cert/admin.key"
+            lswsAdminCert = "/usr/local/lsws/admin/conf/cert/admin.crt"
+
+            olsAdminPrivKey = "/usr/local/lsws/admin/conf/webadmin.key"
+            olsAdminCert = "/usr/local/lsws/admin/conf/webadmin.crt"
 
             pathToStoreSSLFullChain = '/etc/letsencrypt/live/' + virtualHost + '/fullchain.pem'
             pathToStoreSSLPrivKey = '/etc/letsencrypt/live/' + virtualHost + '/privkey.pem'
+
+            adminEmail = "email@" + virtualHost
+
+            retValues = sslUtilities.issueSSLForDomain(virtualHost, adminEmail, path)
+
+            if retValues[0] == 0:
+                print("0," + str(retValues[1]))
+                return 0, retValues[1]
+
 
             ## removing old certs for lscpd
             if os.path.exists(destPrivKey):
@@ -438,31 +466,49 @@ class virtualHostUtilities:
             if os.path.exists(destCert):
                 os.remove(destCert)
 
+            ## removing self signed certs for lsws webadmin
+            if os.path.exists(lswsAdminCert):
+                os.remove(lswsAdminCert)
+            if os.path.exists(lswsAdminPrivKey):
+                os.remove(lswsAdminPrivKey)
 
+            ## create symlink for hostname SSL for lsws webadmin SSL
+            command = 'ln -s %s /usr/local/lsws/admin/conf/cert/admin.crt' % (pathToStoreSSLFullChain)
+            ProcessUtilities.normalExecutioner(command)
+            command = 'ln -s %s /usr/local/lsws/admin/conf/cert/admin.key' % (pathToStoreSSLPrivKey)
+            ProcessUtilities.normalExecutioner(command)
 
-            adminEmail = "email@" + virtualHost
+            ## removing self signed certs for ols webadmin
+            if os.path.exists(olsAdminCert):
+                os.remove(olsAdminCert)
+            if os.path.exists(olsAdminPrivKey):
+                os.remove(olsAdminPrivKey)
 
-            if not os.path.exists(pathToStoreSSLFullChain):
-                retValues = sslUtilities.issueSSLForDomain(virtualHost, adminEmail, path)
+            ## create symlink for hostname SSL for lsws webadmin SSL
+            command = 'ln -s %s /usr/local/lsws/admin/conf/webadmin.crt' % (pathToStoreSSLFullChain)
+            ProcessUtilities.normalExecutioner(command)
+            command = 'ln -s %s /usr/local/lsws/admin/conf/webadmin.key' % (pathToStoreSSLPrivKey)
+            ProcessUtilities.normalExecutioner(command)
 
-                if retValues[0] == 0:
-                    print "0," + str(retValues[1])
-                    return 0, retValues[1]
+            ##
 
-            shutil.copy(pathToStoreSSLPrivKey, destPrivKey)
-            shutil.copy(pathToStoreSSLFullChain, destCert)
+            command = 'ln -s %s %s' % (pathToStoreSSLFullChain, destCert)
+            ProcessUtilities.executioner(command)
+
+            command = 'ln -s %s %s' % (pathToStoreSSLPrivKey, destPrivKey)
+            ProcessUtilities.executioner(command)
 
             command = 'systemctl restart lscpd'
             cmd = shlex.split(command)
             subprocess.call(cmd)
 
-            print "1,None"
-            return 1,'None'
+            print("1,None")
+            return 1, 'None'
 
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [issueSSLForHostName]")
-            print "0," + str(msg)
+            print("0," + str(msg))
             return 0, str(msg)
 
     @staticmethod
@@ -472,13 +518,12 @@ class virtualHostUtilities:
             srcFullChain = '/etc/letsencrypt/live/' + virtualHost + '/fullchain.pem'
             srcPrivKey = '/etc/letsencrypt/live/' + virtualHost + '/privkey.pem'
 
-            if not os.path.exists(srcFullChain):
-                adminEmail = "email@" + virtualHost
-                retValues = sslUtilities.issueSSLForDomain(virtualHost, adminEmail, path)
+            adminEmail = "email@" + virtualHost
+            retValues = sslUtilities.issueSSLForDomain(virtualHost, adminEmail, path)
 
-                if retValues[0] == 0:
-                    print "0," + str(retValues[1])
-                    return 0, retValues[1]
+            if retValues[0] == 0:
+                print("0," + str(retValues[1]))
+                return 0, retValues[1]
 
             ## MailServer specific functions
 
@@ -502,18 +547,27 @@ class virtualHostUtilities:
 
             ## Postfix
 
-            shutil.copy(srcPrivKey, "/etc/postfix/key.pem")
-            shutil.copy(srcFullChain, "/etc/postfix/cert.pem")
+            command = 'ln -s %s /etc/postfix/key.pem' % (srcPrivKey)
+            ProcessUtilities.executioner(command)
+
+            command = 'ln -s %s /etc/postfix/cert.pem' % (srcFullChain)
+            ProcessUtilities.executioner(command)
 
             ## Dovecot
 
-            shutil.copy(srcPrivKey, "/etc/pki/dovecot/private/dovecot.pem")
-            shutil.copy(srcFullChain, "/etc/pki/dovecot/certs/dovecot.pem")
+            command = 'ln -s %s /etc/pki/dovecot/private/dovecot.pem' % (srcPrivKey)
+            ProcessUtilities.executioner(command)
+
+            command = 'ln -s %s /etc/pki/dovecot/certs/dovecot.pem' % (srcFullChain)
+            ProcessUtilities.executioner(command)
 
             ## Dovecot 2ND
 
-            shutil.copy(srcPrivKey, "/etc/dovecot/key.pem")
-            shutil.copy(srcFullChain, "/etc/dovecot/cert.pem")
+            command = 'ln -s %s /etc/dovecot/key.pem' % (srcPrivKey)
+            ProcessUtilities.executioner(command)
+
+            command = 'ln -s %s /etc/dovecot/cert.pem' % (srcFullChain)
+            ProcessUtilities.executioner(command)
 
             ## Update postmaster address dovecot
 
@@ -550,14 +604,14 @@ class virtualHostUtilities:
             p = Process(target=mailUtilities.restartServices, args=())
             p.start()
 
-            print "1,None"
-            return 1,'None'
+            print("1,None")
+            return 1, 'None'
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [issueSSLForHostName]")
-            print "0," + str(msg)
-            return 0,str(msg)
+            print("0," + str(msg))
+            return 0, str(msg)
 
     @staticmethod
     def createAlias(masterDomain, aliasDomain, ssl, sslPath, administratorEmail, owner=None):
@@ -566,9 +620,8 @@ class virtualHostUtilities:
             admin = Administrator.objects.get(userName=owner)
             DNS.dnsTemplate(aliasDomain, admin)
 
-
             if vhost.checkIfAliasExists(aliasDomain) == 1:
-                print "0, This domain already exists as vHost or Alias."
+                print("0, This domain already exists as vHost or Alias.")
                 return
 
             if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
@@ -581,7 +634,7 @@ class virtualHostUtilities:
                     if items.find("listener") > -1 and items.find("Default") > -1:
                         listenerTrueCheck = 1
                     if items.find(' ' + masterDomain) > -1 and items.find('map') > -1 and listenerTrueCheck == 1:
-                        data = filter(None, items.split(" "))
+                        data = [_f for _f in items.split(" ") if _f]
                         if data[1] == masterDomain:
                             writeToFile.writelines(items.rstrip('\n') + ", " + aliasDomain + "\n")
                             listenerTrueCheck = 0
@@ -610,26 +663,26 @@ class virtualHostUtilities:
                 retValues = sslUtilities.issueSSLForDomain(masterDomain, administratorEmail, sslPath, aliasDomain)
                 if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
                     if retValues[0] == 0:
-                        print "0," + str(retValues[1])
+                        print("0," + str(retValues[1]))
                         return
                     else:
                         vhost.createAliasSSLMap(confPath, masterDomain, aliasDomain)
                 else:
                     retValues = sslUtilities.issueSSLForDomain(masterDomain, administratorEmail, sslPath, aliasDomain)
                     if retValues[0] == 0:
-                        print "0," + str(retValues[1])
+                        print("0," + str(retValues[1]))
                         return
 
             website = Websites.objects.get(domain=masterDomain)
 
-            newAlias = aliasDomains(master=website, aliasDomain = aliasDomain)
+            newAlias = aliasDomains(master=website, aliasDomain=aliasDomain)
             newAlias.save()
 
-            print "1,None"
+            print("1,None")
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [createAlias]")
-            print "0," + str(msg)
+            print("0," + str(msg))
 
     @staticmethod
     def issueAliasSSL(masterDomain, aliasDomain, sslPath, administratorEmail):
@@ -640,21 +693,21 @@ class virtualHostUtilities:
             if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
                 confPath = os.path.join(virtualHostUtilities.Server_root, "conf/httpd_config.conf")
                 if retValues[0] == 0:
-                    print "0," + str(retValues[1])
+                    print("0," + str(retValues[1]))
                     return
                 else:
                     vhost.createAliasSSLMap(confPath, masterDomain, aliasDomain)
             else:
                 if retValues[0] == 0:
-                    print "0," + str(retValues[1])
+                    print("0," + str(retValues[1]))
                     return
 
-            print "1,None"
+            print("1,None")
 
-        except BaseException, msg:
+        except BaseException as msg:
 
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [issueAliasSSL]")
-            print "0," + str(msg)
+            print("0," + str(msg))
 
     @staticmethod
     def deleteAlias(masterDomain, aliasDomain):
@@ -669,7 +722,7 @@ class virtualHostUtilities:
 
                 for items in data:
                     if items.find(masterDomain) > -1 and items.find('map') > -1:
-                        data = filter(None, items.split(" "))
+                        data = [_f for _f in items.split(" ") if _f]
                         if data[1] == masterDomain:
                             length = len(data)
                             for i in range(3, length):
@@ -698,10 +751,10 @@ class virtualHostUtilities:
                 delAlias = aliasDomains.objects.get(aliasDomain=aliasDomain)
                 delAlias.delete()
 
-                print "1,None"
-            except BaseException, msg:
+                print("1,None")
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [deleteAlias]")
-                print "0," + str(msg)
+                print("0," + str(msg))
         else:
             try:
 
@@ -722,10 +775,10 @@ class virtualHostUtilities:
                 alias = aliasDomains.objects.get(aliasDomain=aliasDomain)
                 alias.delete()
 
-                print "1,None"
-            except BaseException, msg:
+                print("1,None")
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [deleteAlias]")
-                print "0," + str(msg)
+                print("0," + str(msg))
 
     @staticmethod
     def changeOpenBasedir(domainName, openBasedirValue):
@@ -735,7 +788,6 @@ class virtualHostUtilities:
                 completePathToConfigFile = confPath + "/vhost.conf"
 
                 data = open(completePathToConfigFile, 'r').readlines()
-
 
                 if openBasedirValue == 'Disable':
                     writeToFile = open(completePathToConfigFile, 'w')
@@ -761,7 +813,8 @@ class virtualHostUtilities:
                         if items.find('phpIniOverride') > -1:
                             writeToFile.writelines(items)
                             if fileManagerCheck == 1:
-                                writeToFile.writelines('php_admin_value open_basedir "/tmp:/usr/local/lsws/Example/html/FileManager:$VH_ROOT"\n')
+                                writeToFile.writelines(
+                                    'php_admin_value open_basedir "/tmp:/usr/local/lsws/Example/html/FileManager:$VH_ROOT"\n')
                                 fileManagerCheck = 0
                                 continue
                             else:
@@ -773,10 +826,10 @@ class virtualHostUtilities:
                     writeToFile.close()
 
                 installUtilities.installUtilities.reStartLiteSpeed()
-                print "1,None"
-            except BaseException, msg:
+                print("1,None")
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [changeOpenBasedir]")
-                print "0," + str(msg)
+                print("0," + str(msg))
         else:
             try:
                 confPath = virtualHostUtilities.Server_root + "/conf/vhosts/" + domainName
@@ -826,10 +879,10 @@ class virtualHostUtilities:
                     writeToFile.close()
 
                 installUtilities.installUtilities.reStartLiteSpeed()
-                print "1,None"
-            except BaseException, msg:
+                print("1,None")
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [changeOpenBasedir]")
-                print "0," + str(msg)
+                print("0," + str(msg))
 
     @staticmethod
     def saveSSL(virtualHost, keyPath, certPath):
@@ -854,7 +907,6 @@ class virtualHostUtilities:
             os.remove(keyPath)
             os.remove(certPath)
 
-
             sslUtilities.sslUtilities.installSSLForDomain(virtualHost)
 
             installUtilities.installUtilities.reStartLiteSpeed()
@@ -865,15 +917,16 @@ class virtualHostUtilities:
             cmd = shlex.split(command)
             subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-            print "1,None"
+            print("1,None")
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [saveSSL]")
-            print "0," + str(msg)
+            print("0," + str(msg))
 
     @staticmethod
-    def createDomain(masterDomain, virtualHostName, phpVersion, path, ssl, dkimCheck, openBasedir, owner, tempStatusPath = '/home/cyberpanel/fakePath'):
+    def createDomain(masterDomain, virtualHostName, phpVersion, path, ssl, dkimCheck, openBasedir, owner, apache,
+                     tempStatusPath='/home/cyberpanel/fakePath', LimitsCheck = 1):
         try:
 
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Running some checks..,0')
@@ -881,50 +934,69 @@ class virtualHostUtilities:
             ## Check if this domain either exists as website or child domain
 
             admin = Administrator.objects.get(userName=owner)
-            DNS.dnsTemplate(virtualHostName, admin)
-
-
-            if Websites.objects.filter(domain=virtualHostName).count() > 0:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This Domain already exists as a website. [404]')
-                return 0, "This Domain already exists as a website."
-
-            if ChildDomains.objects.filter(domain=virtualHostName).count() > 0:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This domain already exists as child domain. [404]')
-                return 0, "This domain already exists as child domain."
-
-            ####### Limitations check
-
             master = Websites.objects.get(domain=masterDomain)
-            domainsInPackage = master.package.allowedDomains
 
-            if domainsInPackage == 0:
-                pass
-            elif domainsInPackage > master.childdomains_set.all().count():
-                pass
-            else:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
-                                                          'Exceeded maximum number of domains for this package. [404]')
-                return 0, "Exceeded maximum number of domains for this package"
+            if LimitsCheck:
+                DNS.dnsTemplate(virtualHostName, admin)
+
+                if Websites.objects.filter(domain=virtualHostName).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'This Domain already exists as a website. [404]')
+                    return 0, "This Domain already exists as a website."
+
+                if Websites.objects.filter(domain=virtualHostName.lstrip('www.')).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'This Domain already exists as a website. [404]')
+                    return 0, "This Domain already exists as a website."
+
+                if ChildDomains.objects.filter(domain=virtualHostName).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'This domain already exists as child domain. [404]')
+                    return 0, "This domain already exists as child domain."
 
 
-            ####### Limitations Check End
+                if ChildDomains.objects.filter(domain=virtualHostName.lstrip('www.')).count() > 0:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'This domain already exists as child domain. [404]')
+                    return 0, "This domain already exists as child domain."
 
+                ####### Limitations check
 
-            if vhost.checkIfVirtualHostExists(virtualHostName) == 1:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,'Virtual Host Directory already exists. [404]')
-                return 0, "Virtual Host Directory already exists!"
+                domainsInPackage = master.package.allowedDomains
 
-            if vhost.checkIfAliasExists(virtualHostName) == 1:
-                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,'This domain exists as Alias. [404]')
-                return 0, "This domain exists as Alias."
+                if master.package.allowFullDomain == 0:
+                    if virtualHostName.find(masterDomain) > -1:
+                        pass
+                    else:
+                        logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                                  'Fully qualified domain is not allowed in the package. [404]')
+                        return 0, "Fully qualified domain is not allowed in the package."
 
+                if domainsInPackage == 0:
+                    pass
+                elif domainsInPackage > master.childdomains_set.all().count():
+                    pass
+                else:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'Exceeded maximum number of domains for this package. [404]')
+                    return 0, "Exceeded maximum number of domains for this package"
+
+                ####### Limitations Check End
+
+                if vhost.checkIfVirtualHostExists(virtualHostName) == 1:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath,
+                                                              'Virtual Host Directory already exists. [404]')
+                    return 0, "Virtual Host Directory already exists!"
+
+                if vhost.checkIfAliasExists(virtualHostName) == 1:
+                    logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'This domain exists as Alias. [404]')
+                    return 0, "This domain exists as Alias."
 
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'DKIM Setup..,30')
 
-            if dkimCheck == 1:
-                if mailUtilities.checkIfDKIMInstalled() == 0:
-                    raise BaseException("OpenDKIM is not installed, install OpenDKIM from DKIM Manager.")
+            postFixPath = '/home/cyberpanel/postfix'
 
+            if os.path.exists(postFixPath):
                 retValues = mailUtilities.setupDKIM(virtualHostName)
                 if retValues[0] == 0:
                     raise BaseException(retValues[1])
@@ -934,75 +1006,176 @@ class virtualHostUtilities:
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Creating configurations..,50')
 
             retValues = vhost.createDirectoryForDomain(masterDomain, virtualHostName, phpVersion, path,
-                                                             master.adminEmail, master.externalApp, openBasedir)
+                                                       master.adminEmail, master.externalApp, openBasedir)
             if retValues[0] == 0:
                 raise BaseException(retValues[1])
 
-            retValues = vhost.createConfigInMainDomainHostFile(virtualHostName, masterDomain)
+            if not os.path.exists(virtualHostUtilities.redisConf):
+                retValues = vhost.createConfigInMainDomainHostFile(virtualHostName, masterDomain)
 
-            if retValues[0] == 0:
-                raise BaseException(retValues[1])
+                if retValues[0] == 0:
+                    raise BaseException(retValues[1])
 
             ## Now restart litespeed after initial configurations are done
 
-            website = ChildDomains(master=master, domain=virtualHostName, path=path, phpSelection=phpVersion, ssl=ssl)
-            website.save()
+            if LimitsCheck:
+                website = ChildDomains(master=master, domain=virtualHostName, path=path, phpSelection=phpVersion, ssl=ssl)
+                website.save()
 
             if ssl == 1:
                 logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Creating SSL..,50')
-                installUtilities.installUtilities.reStartLiteSpeed()
+                if not os.path.exists(virtualHostUtilities.redisConf):
+                    installUtilities.installUtilities.reStartLiteSpeed()
                 retValues = sslUtilities.issueSSLForDomain(virtualHostName, master.adminEmail, path)
-                installUtilities.installUtilities.reStartLiteSpeed()
+                if not os.path.exists(virtualHostUtilities.redisConf):
+                    installUtilities.installUtilities.reStartLiteSpeed()
                 if retValues[0] == 0:
                     raise BaseException(retValues[1])
 
             ## Final Restart
             if ssl == 0:
-                installUtilities.installUtilities.reStartLiteSpeed()
+                if not os.path.exists(virtualHostUtilities.redisConf):
+                    installUtilities.installUtilities.reStartLiteSpeed()
 
             vhost.finalizeDomainCreation(master.externalApp, path)
 
+            ## Apache Settings
+
+            confPath = vhost.Server_root + "/conf/vhosts/" + virtualHostName
+            completePathToConfigFile = confPath + "/vhost.conf"
+
+            if apache:
+                if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+                    if ApacheController.checkIfApacheInstalled() == 0:
+                        result = ApacheController.setupApache(tempStatusPath)
+                        if result[0] == 0:
+                            raise BaseException(result[1])
+
+                    result = ApacheVhost.setupApacheVhostChild(master.adminEmail, master.externalApp,
+                                                               master.externalApp, phpVersion, virtualHostName, path)
+                    if result[0] == 0:
+                        raise BaseException(result[1])
+                    else:
+                        ApacheVhost.perHostVirtualConfOLS(completePathToConfigFile, master.adminEmail)
+                        installUtilities.installUtilities.reStartLiteSpeed()
+                        php = PHPManager.getPHPString(phpVersion)
+                        command = "systemctl restart php%s-php-fpm" % (php)
+                        ProcessUtilities.normalExecutioner(command)
+
             ## DKIM Check
 
-            if dkimCheck == 1:
-                DNS.createDKIMRecords(virtualHostName)
+            postFixPath = '/home/cyberpanel/postfix'
 
+            if os.path.exists(postFixPath):
+                if dkimCheck == 1:
+                    DNS.createDKIMRecords(virtualHostName)
 
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Domain successfully created. [200]')
             return 1, "None"
 
-        except BaseException, msg:
-            numberOfWebsites = Websites.objects.count() + ChildDomains.objects.count()
-            vhost.deleteCoreConf(virtualHostName, numberOfWebsites)
+        except BaseException as msg:
+            if ACLManager.FindIfChild() == 0:
+                numberOfWebsites = Websites.objects.count() + ChildDomains.objects.count()
+                vhost.deleteCoreConf(virtualHostName, numberOfWebsites)
+
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, str(msg) + ". [404]")
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [createDomain]")
             return 0, str(msg)
 
     @staticmethod
-    def deleteDomain(virtualHostName):
+    def deleteDomain(virtualHostName, DeleteDocRoot=0):
         try:
 
             numberOfWebsites = Websites.objects.count() + ChildDomains.objects.count()
             vhost.deleteCoreConf(virtualHostName, numberOfWebsites)
             delWebsite = ChildDomains.objects.get(domain=virtualHostName)
+
+            if DeleteDocRoot:
+                command = 'rm -rf %s' % (delWebsite.path)
+                ProcessUtilities.executioner(command)
+
             delWebsite.delete()
             installUtilities.installUtilities.reStartLiteSpeed()
 
-            print "1,None"
-            return 1,'None'
+            print("1,None")
+            return 1, 'None'
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [deleteDomain]")
-            print "0," + str(msg)
-            return 0,str(msg)
+            print("0," + str(msg))
+            return 0, str(msg)
+
+    @staticmethod
+    def switchServer(virtualHostName, phpVersion, server, tempStatusPath):
+        try:
+            logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Starting Conversion..,0')
+            child = 0
+            try:
+                website = Websites.objects.get(domain=virtualHostName)
+            except:
+                website = ChildDomains.objects.get(domain=virtualHostName)
+                child = 1
+
+            confPath = vhost.Server_root + "/conf/vhosts/" + virtualHostName
+            completePathToConfigFile = confPath + "/vhost.conf"
+
+            if server == virtualHostUtilities.apache:
+
+                if os.path.exists(completePathToConfigFile):
+                    os.remove(completePathToConfigFile)
+
+                if ApacheController.checkIfApacheInstalled() == 0:
+                    result = ApacheController.setupApache(tempStatusPath)
+                    if result[0] == 0:
+                        raise BaseException(result[1])
+
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Creating apache configurations..,90')
+                if child:
+                    ApacheVhost.perHostVirtualConfOLS(completePathToConfigFile, website.master.adminEmail)
+                else:
+                    ApacheVhost.perHostVirtualConfOLS(completePathToConfigFile, website.adminEmail)
+
+                if child:
+                    ApacheVhost.setupApacheVhostChild(website.master.adminEmail, website.master.externalApp,
+                                                      website.master.externalApp,
+                                                      phpVersion, virtualHostName, website.path)
+                else:
+                    ApacheVhost.setupApacheVhost(website.adminEmail, website.externalApp, website.externalApp,
+                                                 phpVersion, virtualHostName)
+
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Restarting servers and phps..,90')
+
+                php = PHPManager.getPHPString(phpVersion)
+                command = "systemctl restart php%s-php-fpm" % (php)
+                ProcessUtilities.normalExecutioner(command)
+                installUtilities.installUtilities.reStartLiteSpeed()
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Successfully converted.[200]')
+            else:
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Starting Conversion..,0')
+                ApacheVhost.DeleteApacheVhost(virtualHostName)
+
+                if child:
+                    vhost.perHostDomainConf(website.path, website.master.domain, virtualHostName,
+                                            completePathToConfigFile,
+                                            website.master.adminEmail, phpVersion, website.master.externalApp, 0)
+                else:
+                    vhost.perHostVirtualConf(completePathToConfigFile, website.adminEmail, website.externalApp,
+                                             phpVersion, virtualHostName, 0)
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Restarting server..,90')
+                installUtilities.installUtilities.reStartLiteSpeed()
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Successfully converted. [200]')
+
+        except BaseException as msg:
+            logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, '%s[404]' % str(msg))
+            logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [switchServer]")
 
     @staticmethod
     def getDiskUsage(path, totalAllowed):
         try:
 
-            totalUsageInMB = subprocess.check_output(["sudo", "du", "-hs", path, "--block-size=1M"]).split()[0]
+            totalUsageInMB = subprocess.check_output('du -hs %s --block-size=1M' % (path), shell=True).decode("utf-8").split()[0]
 
             percentage = float(100) / float(totalAllowed)
 
@@ -1010,9 +1183,11 @@ class virtualHostUtilities:
 
             data = [int(totalUsageInMB), int(percentage)]
             return data
-        except BaseException, msg:
-            logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [getDiskUsage]")
-            return [int(0), int(0)]
+        except BaseException:
+            try:
+                return [int(totalUsageInMB), int(0)]
+            except:
+                return [int(0), int(0)]
 
     @staticmethod
     def permissionControl(path):
@@ -1023,7 +1198,7 @@ class virtualHostUtilities:
 
             res = subprocess.call(cmd)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
 
     @staticmethod
@@ -1035,11 +1210,29 @@ class virtualHostUtilities:
 
             res = subprocess.call(cmd)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
 
-def main():
+    @staticmethod
+    def FindStats(website):
 
+        import json
+        try:
+            config = json.loads(website.config)
+            DiskUsage = config['DiskUsage']
+            DiskUsagePercentage = config['DiskUsagePercentage']
+            bwInMB = config['bwInMB']
+            bwUsage = config['bwUsage']
+        except:
+            DiskUsage = 0
+            DiskUsagePercentage = 0
+            bwInMB = 0
+            bwUsage = 0
+
+        return DiskUsage, DiskUsagePercentage, bwInMB, bwUsage
+
+
+def main():
     parser = argparse.ArgumentParser(description='CyberPanel Installer')
     parser.add_argument('function', help='Specific a function to call!')
     parser.add_argument('--virtualHostName', help='Domain name!')
@@ -1054,7 +1247,7 @@ def main():
     parser.add_argument('--websiteOwner', help='Website Owner Name')
     parser.add_argument('--package', help='Website package')
     parser.add_argument('--restore', help='Restore Check.')
-
+    parser.add_argument('--apache', help='Enable/Disable Apache as backend')
 
     ## arguments for creation child domains
 
@@ -1069,7 +1262,6 @@ def main():
     ## arguments for configuration files
 
     parser.add_argument('--tempPath', help='Temporary path where configuration data is placed!')
-
 
     ## save ssl arguments
 
@@ -1101,6 +1293,15 @@ def main():
 
     parser.add_argument('--openBasedirValue', help='open_base dir protection value!')
     parser.add_argument('--tempStatusPath', help='Temporary Status file path.')
+    parser.add_argument('--mailDomain', help='To create or not to create mail domain.')
+
+    ## Switch Server
+
+    parser.add_argument('--server', help='Switch server parameter.')
+
+    ## Doc root deletion for child domain
+
+    parser.add_argument('--DeleteDocRoot', help='Doc root deletion for child domain.')
 
     args = parser.parse_args()
 
@@ -1116,11 +1317,21 @@ def main():
             openBasedir = 0
 
         try:
+            apache = int(args.apache)
+        except:
+            apache = 0
+
+        try:
             tempStatusPath = args.tempStatusPath
         except:
             tempStatusPath = '/home/cyberpanel/fakePath'
 
-        virtualHostUtilities.createVirtualHost(args.virtualHostName, args.administratorEmail, args.phpVersion, args.virtualHostUser, int(args.ssl), dkimCheck, openBasedir, args.websiteOwner, args.package, tempStatusPath)
+        virtualHostUtilities.createVirtualHost(args.virtualHostName, args.administratorEmail, args.phpVersion,
+                                               args.virtualHostUser, int(args.ssl), dkimCheck, openBasedir,
+                                               args.websiteOwner, args.package, apache, tempStatusPath, int(args.mailDomain))
+    elif args.function == "setupAutoDiscover":
+        admin = Administrator.objects.get(userName=args.websiteOwner)
+        virtualHostUtilities.setupAutoDiscover(1, '/home/cyberpanel/templogs', args.virtualHostName, admin)
     elif args.function == "deleteVirtualHostConfigurations":
         vhost.deleteVirtualHostConfigurations(args.virtualHostName)
     elif args.function == "createDomain":
@@ -1135,37 +1346,48 @@ def main():
             openBasedir = 0
 
         try:
+            apache = int(args.apache)
+        except:
+            apache = 0
+
+        try:
             tempStatusPath = args.tempStatusPath
         except:
             tempStatusPath = '/home/cyberpanel/fakePath'
 
-        virtualHostUtilities.createDomain(args.masterDomain, args.virtualHostName, args.phpVersion, args.path, int(args.ssl), dkimCheck, openBasedir, args.websiteOwner, tempStatusPath)
+        virtualHostUtilities.createDomain(args.masterDomain, args.virtualHostName, args.phpVersion, args.path,
+                                          int(args.ssl), dkimCheck, openBasedir, args.websiteOwner, apache,
+                                          tempStatusPath)
     elif args.function == "issueSSL":
-        virtualHostUtilities.issueSSL(args.virtualHostName,args.path,args.administratorEmail)
+        virtualHostUtilities.issueSSL(args.virtualHostName, args.path, args.administratorEmail)
     elif args.function == "changePHP":
-        vhost.changePHP(args.path,args.phpVersion)
+        vhost.changePHP(args.path, args.phpVersion)
     elif args.function == "getAccessLogs":
-        virtualHostUtilities.getAccessLogs(args.path,int(args.page))
+        virtualHostUtilities.getAccessLogs(args.path, int(args.page))
     elif args.function == "getErrorLogs":
-        virtualHostUtilities.getErrorLogs(args.path,int(args.page))
+        virtualHostUtilities.getErrorLogs(args.path, int(args.page))
     elif args.function == "saveVHostConfigs":
-        virtualHostUtilities.saveVHostConfigs(args.path,args.tempPath)
+        virtualHostUtilities.saveVHostConfigs(args.path, args.tempPath)
     elif args.function == "saveRewriteRules":
-        virtualHostUtilities.saveRewriteRules(args.virtualHostName,args.path,args.tempPath)
+        virtualHostUtilities.saveRewriteRules(args.virtualHostName, args.path, args.tempPath)
     elif args.function == "saveSSL":
-        virtualHostUtilities.saveSSL(args.virtualHostName,args.tempKeyPath,args.tempCertPath)
+        virtualHostUtilities.saveSSL(args.virtualHostName, args.tempKeyPath, args.tempCertPath)
     elif args.function == "installWordPress":
-        virtualHostUtilities.installWordPress(args.virtualHostName,args.path,args.virtualHostUser,args.dbName,args.dbUser,args.dbPassword)
+        virtualHostUtilities.installWordPress(args.virtualHostName, args.path, args.virtualHostUser, args.dbName,
+                                              args.dbUser, args.dbPassword)
     elif args.function == "installJoomla":
-        virtualHostUtilities.installJoomla(args.virtualHostName,args.path,args.virtualHostUser,args.dbName,args.dbUser,args.dbPassword,args.username,args.password,args.prefix,args.sitename, args.tempStatusPath)
+        virtualHostUtilities.installJoomla(args.virtualHostName, args.path, args.virtualHostUser, args.dbName,
+                                           args.dbUser, args.dbPassword, args.username, args.password, args.prefix,
+                                           args.sitename, args.tempStatusPath)
     elif args.function == "issueSSLForHostName":
-        virtualHostUtilities.issueSSLForHostName(args.virtualHostName,args.path)
+        virtualHostUtilities.issueSSLForHostName(args.virtualHostName, args.path)
     elif args.function == "issueSSLForMailServer":
-        virtualHostUtilities.issueSSLForMailServer(args.virtualHostName,args.path)
+        virtualHostUtilities.issueSSLForMailServer(args.virtualHostName, args.path)
     elif args.function == "findDomainBW":
         vhost.findDomainBW(args.virtualHostName, int(args.bandwidth))
     elif args.function == 'createAlias':
-        virtualHostUtilities.createAlias(args.masterDomain,args.aliasDomain,int(args.ssl),args.sslPath, args.administratorEmail, args.websiteOwner)
+        virtualHostUtilities.createAlias(args.masterDomain, args.aliasDomain, int(args.ssl), args.sslPath,
+                                         args.administratorEmail, args.websiteOwner)
     elif args.function == 'issueAliasSSL':
         virtualHostUtilities.issueAliasSSL(args.masterDomain, args.aliasDomain, args.sslPath, args.administratorEmail)
     elif args.function == 'deleteAlias':
@@ -1173,7 +1395,10 @@ def main():
     elif args.function == 'changeOpenBasedir':
         virtualHostUtilities.changeOpenBasedir(args.virtualHostName, args.openBasedirValue)
     elif args.function == 'deleteDomain':
-        virtualHostUtilities.deleteDomain(args.virtualHostName)
+        virtualHostUtilities.deleteDomain(args.virtualHostName, int(args.DeleteDocRoot))
+    elif args.function == 'switchServer':
+        virtualHostUtilities.switchServer(args.virtualHostName, args.phpVersion, int(args.server), args.tempStatusPath)
+
 
 if __name__ == "__main__":
     main()

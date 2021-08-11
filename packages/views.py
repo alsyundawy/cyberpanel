@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.shortcuts import redirect
 from loginSystem.views import loadLoginPage
-from packagesManager import PackagesManager
-from pluginManager import pluginManager
+from .packagesManager import PackagesManager
+from .pluginManager import pluginManager
 
 # Create your views here.
 
@@ -104,6 +104,26 @@ def saveChanges(request):
         result = pluginManager.postSaveChanges(request, coreResult)
         if result != 200:
             return result
+
+        return coreResult
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+def listPackages(request):
+    try:
+        pm = PackagesManager(request)
+        return pm.listPackages()
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+
+def fetchPackagesTable(request):
+    try:
+
+        pm = PackagesManager(request)
+        coreResult = pm.fetchPackagesTable()
 
         return coreResult
     except KeyError:

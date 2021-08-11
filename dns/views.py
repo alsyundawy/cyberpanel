@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 from django.shortcuts import redirect
 from loginSystem.views import loadLoginPage
-from dnsManager import DNSManager
-from pluginManager import pluginManager
+from .dnsManager import DNSManager
+from .pluginManager import pluginManager
 import json
 
 # Create your views here.
@@ -75,6 +75,14 @@ def addDeleteDNSRecords(request):
         userID = request.session['userID']
         dm = DNSManager()
         return dm.addDeleteDNSRecords(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def updateRecord(request):
+    try:
+        userID = request.session['userID']
+        dm = DNSManager()
+        return dm.updateRecord(userID, json.loads(request.body))
     except KeyError:
         return redirect(loadLoginPage)
 
@@ -152,8 +160,94 @@ def submitZoneDeletion(request):
         return redirect(loadLoginPage)
 
 
+def configureDefaultNameServers(request):
+    try:
+        userID = request.session['userID']
+        dm = DNSManager()
+        return dm.configureDefaultNameServers(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+
+def saveNSConfigurations(request):
+    try:
+        userID = request.session['userID']
+        dm = DNSManager()
+        return dm.saveNSConfigurations(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def addDeleteDNSRecordsCloudFlare(request):
+    try:
+        userID = request.session['userID']
+        dm = DNSManager()
+        return dm.addDeleteDNSRecordsCloudFlare(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def saveCFConfigs(request):
+    try:
+        userID = request.session['userID']
+
+        dm = DNSManager()
+        coreResult = dm.saveCFConfigs(userID, json.loads(request.body))
+
+        return coreResult
+    except KeyError:
+        return redirect(loadLoginPage)
 
 
 
+def getCurrentRecordsForDomainCloudFlare(request):
+    try:
+        userID = request.session['userID']
+        dm = DNSManager()
+        return dm.getCurrentRecordsForDomainCloudFlare(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
 
+def deleteDNSRecordCloudFlare(request):
+    try:
+        userID = request.session['userID']
 
+        dm = DNSManager()
+        coreResult =  dm.deleteDNSRecordCloudFlare(userID, json.loads(request.body))
+
+        return coreResult
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def addDNSRecordCloudFlare(request):
+    try:
+        userID = request.session['userID']
+
+        dm = DNSManager()
+        coreResult =  dm.addDNSRecordCloudFlare(userID, json.loads(request.body))
+
+        return coreResult
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def syncCF(request):
+    try:
+        userID = request.session['userID']
+
+        dm = DNSManager()
+        coreResult =  dm.syncCF(userID, json.loads(request.body))
+
+        return coreResult
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def enableProxy(request):
+    try:
+        userID = request.session['userID']
+
+        dm = DNSManager()
+        coreResult =  dm.enableProxy(userID, json.loads(request.body))
+
+        return coreResult
+    except KeyError:
+        return redirect(loadLoginPage)

@@ -1,11 +1,12 @@
-#!/usr/local/CyberCP/bin/python2
+#!/usr/local/CyberCP/bin/python
 import os.path
 import sys
 import django
+from plogical.httpProc import httpProc
 sys.path.append('/usr/local/CyberCP')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "CyberCP.settings")
 django.setup()
-from django.shortcuts import render,redirect
+from django.shortcuts import redirect
 from django.http import HttpResponse
 from loginSystem.views import loadLoginPage
 from loginSystem.models import Administrator
@@ -18,39 +19,24 @@ class PackagesManager:
         self.request  = request
 
     def packagesHome(self):
-        try:
-            val = self.request.session['userID']
-            return render(self.request, 'packages/index.html', {})
-        except BaseException, msg:
-            return HttpResponse(str(msg))
+        proc = httpProc(self.request, 'packages/index.html',
+                        None, 'admin')
+        return proc.render()
 
     def createPacakge(self):
-        try:
-            userID = self.request.session['userID']
-            currentACL = ACLManager.loadedACL(userID)
-
-            if ACLManager.currentContextPermission(currentACL, 'createPackage') == 0:
-                return ACLManager.loadError()
-
-            admin = Administrator.objects.get(pk=userID)
-            return render(self.request, 'packages/createPackage.html', {"admin": admin.userName})
-
-        except KeyError:
-            return redirect(loadLoginPage)
+        userID = self.request.session['userID']
+        admin = Administrator.objects.get(pk=userID)
+        proc = httpProc(self.request, 'packages/createPackage.html',
+                        {"adminNamePackage": admin.userName}, 'createPackage')
+        return proc.render()
 
     def deletePacakge(self):
-        try:
-            userID = self.request.session['userID']
-            currentACL = ACLManager.loadedACL(userID)
-
-            if ACLManager.currentContextPermission(currentACL, 'deletePackage') == 0:
-                return ACLManager.loadError()
-
-            packageList = ACLManager.loadPackages(userID, currentACL)
-            return render(self.request, 'packages/deletePackage.html', {"packageList": packageList})
-
-        except BaseException, msg:
-            return HttpResponse(str(msg))
+        userID = self.request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+        packageList = ACLManager.loadPackages(userID, currentACL)
+        proc = httpProc(self.request, 'packages/deletePackage.html',
+                        {"packageList": packageList}, 'deletePackage')
+        return proc.render()
 
     def submitPackage(self):
         try:
@@ -69,10 +55,22 @@ class PackagesManager:
             ftpAccounts = int(data['ftpAccounts'])
             emails = int(data['emails'])
             allowedDomains = int(data['allowedDomains'])
+
             try:
                 api = data['api']
             except:
                 api = '0'
+
+            try:
+                allowFullDomain = int(data['allowFullDomain'])
+            except:
+                allowFullDomain = 1
+
+            try:
+                enforceDiskLimits = int(data['enforceDiskLimits'])
+            except:
+                enforceDiskLimits = 0
+
 
             if packageSpace < 0 or packageBandwidth < 0 or packageDatabases < 0 or ftpAccounts < 0 or emails < 0 or allowedDomains < 0:
                 data_ret = {'saveStatus': 0, 'error_message': "All values should be positive or 0."}
@@ -86,7 +84,7 @@ class PackagesManager:
 
             package = Package(admin=admin, packageName=packageName, diskSpace=packageSpace,
                               bandwidth=packageBandwidth, ftpAccounts=ftpAccounts, dataBases=packageDatabases,
-                              emailAccounts=emails, allowedDomains=allowedDomains)
+                              emailAccounts=emails, allowedDomains=allowedDomains, allowFullDomain=allowFullDomain, enforceDiskLimits=enforceDiskLimits)
 
             package.save()
 
@@ -94,7 +92,7 @@ class PackagesManager:
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'status': 0, 'saveStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -118,24 +116,18 @@ class PackagesManager:
             return HttpResponse(json_data)
 
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'status': 0, 'deleteStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
     def modifyPackage(self):
-        try:
-            userID = self.request.session['userID']
-            currentACL = ACLManager.loadedACL(userID)
-
-            if ACLManager.currentContextPermission(currentACL, 'modifyPackage') == 0:
-                return ACLManager.loadError()
-
-            packageList = ACLManager.loadPackages(userID, currentACL)
-            return render(self.request, 'packages/modifyPackage.html', {"packList": packageList})
-
-        except BaseException, msg:
-            return HttpResponse(str(msg))
+        userID = self.request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+        packageList = ACLManager.loadPackages(userID, currentACL)
+        proc = httpProc(self.request, 'packages/modifyPackage.html',
+                        {"packList": packageList}, 'modifyPackage')
+        return proc.render()
 
     def submitModify(self):
         try:
@@ -156,13 +148,14 @@ class PackagesManager:
             dataBases = modifyPack.dataBases
             emails = modifyPack.emailAccounts
 
+
             data_ret = {'emails': emails, 'modifyStatus': 1, 'error_message': "None",
                         "diskSpace": diskSpace, "bandwidth": bandwidth, "ftpAccounts": ftpAccounts,
-                        "dataBases": dataBases, "allowedDomains": modifyPack.allowedDomains}
+                        "dataBases": dataBases, "allowedDomains": modifyPack.allowedDomains, 'allowFullDomain': modifyPack.allowFullDomain, 'enforceDiskLimits': modifyPack.enforceDiskLimits}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'modifyStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
@@ -194,13 +187,92 @@ class PackagesManager:
             modifyPack.dataBases = data['dataBases']
             modifyPack.emailAccounts = data['emails']
             modifyPack.allowedDomains = data['allowedDomains']
+
+            try:
+                modifyPack.allowFullDomain = int(data['allowFullDomain'])
+            except:
+                modifyPack.allowFullDomain = 1
+
+            try:
+                modifyPack.enforceDiskLimits = int(data['enforceDiskLimits'])
+            except:
+                modifyPack.enforceDiskLimits = 0
+
             modifyPack.save()
 
             data_ret = {'status': 1, 'saveStatus': 1, 'error_message': "None"}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
-        except BaseException, msg:
+        except BaseException as msg:
             data_ret = {'status': 0, 'saveStatus': 0, 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
+
+
+    def listPackages(self):
+        userID = self.request.session['userID']
+        currentACL = ACLManager.loadedACL(userID)
+        packageList = ACLManager.loadPackages(userID, currentACL)
+        proc = httpProc(self.request, 'packages/listPackages.html',
+                        {"packList": packageList}, 'listPackages')
+        return proc.render()
+
+    def listPackagesAPI(self,data=None):
+        """
+            List of packages for API
+        :param data:
+        :return HttpResponse:
+        """
+        try:
+            adminUser = data['adminUser']
+            admin = Administrator.objects.get(userName=adminUser)
+            currentACL = ACLManager.loadedACL(admin.id)
+            packageList = ACLManager.loadPackages(admin.id, currentACL)
+            return HttpResponse(json.dumps(packageList))
+        except BaseException as msg:
+            data_ret = {'status': 0, 'error_message': str(msg)}
+            json_data = json.dumps(data_ret)
+            return HttpResponse(json_data)
+
+    def fetchPackagesTable(self):
+        try:
+            userID = self.request.session['userID']
+
+            currentACL = ACLManager.loadedACL(userID)
+
+            if ACLManager.currentContextPermission(currentACL, 'listPackages') == 0:
+                return ACLManager.loadErrorJson()
+
+
+            packages = ACLManager.loadPackageObjects(userID, currentACL)
+
+            json_data = "["
+            checker = 0
+
+            for items in packages:
+
+                dic = {'package': items.packageName,
+                       'diskSpace': items.diskSpace,
+                       'bandwidth': items.bandwidth,
+                       'emailAccounts': items.emailAccounts,
+                       'dataBases': items.dataBases,
+                       'ftpAccounts': items.ftpAccounts,
+                       'allowedDomains': items.allowedDomains,
+                       'allowFullDomain': items.allowFullDomain,
+                       'enforceDiskLimits': items.enforceDiskLimits
+                       }
+
+                if checker == 0:
+                    json_data = json_data + json.dumps(dic)
+                    checker = 1
+                else:
+                    json_data = json_data + ',' + json.dumps(dic)
+
+            json_data = json_data + ']'
+
+            final_json = json.dumps({'status': 1, 'fetchStatus': 1, 'error_message': "None", "data": json_data})
+            return HttpResponse(final_json)
+
+        except KeyError:
+            return redirect(loadLoginPage)

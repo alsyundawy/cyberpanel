@@ -1,4 +1,4 @@
-#!/usr/local/CyberCP/bin/python2
+#!/usr/local/CyberCP/bin/python
 import os,sys
 sys.path.append('/usr/local/CyberCP')
 import django
@@ -10,11 +10,11 @@ import argparse
 import shutil
 import plogical.CyberCPLogFileWriter as logging
 from plogical.processUtilities import ProcessUtilities
-from websiteFunctions.models import Websites, ChildDomains, aliasDomains
+from websiteFunctions.models import Websites
 from plogical.virtualHostUtilities import virtualHostUtilities
 from plogical.sslUtilities import sslUtilities
 from plogical.vhost import vhost
-
+from shutil import ignore_patterns
 
 
 class ServerStatusUtil:
@@ -29,7 +29,7 @@ class ServerStatusUtil:
                 return 0
             else:
                 return 1
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
@@ -57,22 +57,34 @@ class ServerStatusUtil:
             except:
                 pass
 
-            command = 'wget https://www.litespeedtech.com/packages/5.0/lsws-5.3.5-ent-x86_64-linux.tar.gz'
+            command = 'wget https://www.litespeedtech.com/packages/6.0/lsws-6.0-ent-x86_64-linux.tar.gz'
             if ServerStatusUtil.executioner(command, statusFile) == 0:
                 return 0
 
-            command = 'tar zxf lsws-5.3.5-ent-x86_64-linux.tar.gz'
+            if os.path.exists('/usr/local/CyberCP/lsws-6.0/'):
+                shutil.rmtree('/usr/local/CyberCP/lsws-6.0')
+
+            if os.path.exists('/usr/local/CyberCP/lsws-6.0/'):
+                shutil.rmtree('/usr/local/CyberCP/lsws-6.0/')
+
+
+            command = 'tar zxf lsws-6.0-ent-x86_64-linux.tar.gz -C /usr/local/CyberCP'
             if ServerStatusUtil.executioner(command, statusFile) == 0:
                 return 0
 
-            writeSerial = open('lsws-5.3.5/serial.no', 'w')
-            writeSerial.writelines(licenseKey)
-            writeSerial.close()
+            if licenseKey == 'trial':
+                command = 'wget -q --output-document=/usr/local/CyberCP/lsws-6.0/trial.key http://license.litespeedtech.com/reseller/trial.key'
+                if ServerStatusUtil.executioner(command, statusFile) == 0:
+                    return 0
+            else:
+                writeSerial = open('/usr/local/CyberCP/lsws-6.0/serial.no', 'w')
+                writeSerial.writelines(licenseKey)
+                writeSerial.close()
 
-            shutil.copy('/usr/local/CyberCP/serverStatus/litespeed/install.sh', 'lsws-5.3.5/')
-            shutil.copy('/usr/local/CyberCP/serverStatus/litespeed/functions.sh', 'lsws-5.3.5/')
+            shutil.copy('/usr/local/CyberCP/serverStatus/litespeed/install.sh', '/usr/local/CyberCP/lsws-6.0/')
+            shutil.copy('/usr/local/CyberCP/serverStatus/litespeed/functions.sh', '/usr/local/CyberCP/lsws-6.0/')
 
-            os.chdir('lsws-5.3.5')
+            os.chdir('/usr/local/CyberCP/lsws-6.0/')
 
             command = 'chmod +x install.sh'
             if ServerStatusUtil.executioner(command, statusFile) == 0:
@@ -98,8 +110,20 @@ class ServerStatusUtil:
             except:
                 pass
 
+            try:
+                os.rmdir("/usr/local/CyberCP/lsws-6.0")
+            except:
+                pass
+
+
+            files = ['/usr/local/lsws/conf/httpd_config.xml', '/usr/local/lsws/conf/modsec.conf', '/usr/local/lsws/conf/httpd.conf']
+            for items in files:
+                command = 'chmod 644 %s' % (items)
+                ServerStatusUtil.executioner(command, statusFile)
+
+
             return 1
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
@@ -122,7 +146,7 @@ class ServerStatusUtil:
             logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,"Filemanager files are set!\n")
 
             return 1
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
@@ -133,14 +157,11 @@ class ServerStatusUtil:
         if os.path.exists('/usr/local/lsws'):
             shutil.rmtree('/usr/local/lsws')
 
-        command = 'tar -zxvf /usr/local/olsBackup.tar.gz -C /usr/local/'
+        command = 'mv /usr/local/lswsbak /usr/local/lsws'
         ServerStatusUtil.executioner(command, FNULL)
 
-        command = 'mv /usr/local/usr/local/lsws /usr/local'
+        command = '/usr/local/lsws/bin/openlitespeed'
         ServerStatusUtil.executioner(command, FNULL)
-
-        if os.path.exists('/usr/local/usr'):
-            shutil.rmtree('/usr/local/usr')
 
     @staticmethod
     def createWebsite(website):
@@ -174,7 +195,7 @@ class ServerStatusUtil:
             cmd = shlex.split(command)
             subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
@@ -211,7 +232,7 @@ class ServerStatusUtil:
             cmd = shlex.split(command)
             subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
         return 0
 
@@ -232,7 +253,7 @@ class ServerStatusUtil:
                         if ServerStatusUtil.createDomain(child) == 0:
                             logging.CyberCPLogFileWriter.writeToFile(
                                 'Error while creating child domain: ' + child.domain)
-                    except BaseException, msg:
+                    except BaseException as msg:
                         logging.CyberCPLogFileWriter.writeToFile(
                             'Error while creating child domain: ' + child.domain + ' . Exact message: ' + str(
                                 msg))
@@ -244,20 +265,23 @@ class ServerStatusUtil:
                         aliasDomain = alias.aliasDomain
                         alias.delete()
                         virtualHostUtilities.createAlias(website.domain, aliasDomain, 0, '/home', website.adminEmail, website.admin)
-                    except BaseException, msg:
+                    except BaseException as msg:
                         logging.CyberCPLogFileWriter.writeToFile(
                             'Error while creating alais domain: ' + aliasDomain + ' . Exact message: ' + str(
                                 msg))
 
                 logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
                                                           "vhost conf successfully built for: " + website.domain + ".\n", 1)
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
     @staticmethod
     def switchTOLSWS(licenseKey):
         try:
+
+            os.environ['TERM'] = "xterm-256color"
+
             statusFile = open(ServerStatusUtil.lswsInstallStatusPath, 'w')
             FNULL = open(os.devnull, 'w')
 
@@ -270,11 +294,9 @@ class ServerStatusUtil:
             ProcessUtilities.killLiteSpeed()
 
             if os.path.exists('/usr/local/lsws'):
-                command = 'tar -zcvf /usr/local/olsBackup.tar.gz /usr/local/lsws'
-                if ServerStatusUtil.executioner(command, FNULL) == 0:
-                    logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath, "Failed to create backup of current LSWS. [404]", 1)
-                    ServerStatusUtil.recover()
-                    return 0
+
+                if not os.path.exists('/usr/local/lswsbak'):
+                    shutil.copytree('/usr/local/lsws', '/usr/local/lswsbak', symlinks=True, ignore=ignore_patterns('*.sock*'))
 
                 dirs = os.listdir('/usr/local/lsws')
                 for dir in dirs:
@@ -285,6 +307,14 @@ class ServerStatusUtil:
                         shutil.rmtree(finalDir)
                     except:
                         pass
+
+            if os.path.exists('/etc/redhat-release'):
+
+                command = 'yum -y erase openlitespeed'
+            else:
+                command = "apt-get -y remove openlitespeed"
+
+            ServerStatusUtil.executioner(command, statusFile)
 
             logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
                                                       "OpenLiteSpeed removed.\n", 1)
@@ -302,10 +332,10 @@ class ServerStatusUtil:
                                                       "LiteSpeed Enterprise Web Server installed.\n", 1)
 
 
-            if ServerStatusUtil.setupFileManager(statusFile) == 0:
-                logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath, "Failed to set up File Manager. [404]", 1)
-                ServerStatusUtil.recover()
-                return 0
+            # if ServerStatusUtil.setupFileManager(statusFile) == 0:
+            #     logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath, "Failed to set up File Manager. [404]", 1)
+            #     ServerStatusUtil.recover()
+            #     return 0
 
             logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
                                                       "Rebuilding vhost conf..\n", 1)
@@ -318,10 +348,34 @@ class ServerStatusUtil:
             ProcessUtilities.stopLitespeed()
             ProcessUtilities.restartLitespeed()
 
+            ### Check and remove OLS restart if lsws ent detected
+
+            CentOSPath = '/etc/redhat-release'
+
+            if os.path.exists(CentOSPath):
+                cronPath = '/var/spool/cron/root'
+            else:
+                cronPath = '/var/spool/cron/crontabs/root'
+
+            data = open(cronPath, 'r').readlines()
+
+            writeToFile = open(cronPath, 'w')
+
+            for items in data:
+                if items.find('-maxdepth 2 -type f -newer') > -1:
+                    pass
+                else:
+                    writeToFile.writelines(items)
+
+            writeToFile.close()
+
+            ###
 
             logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,"Successfully switched to LITESPEED ENTERPRISE WEB SERVER. [200]\n", 1)
 
-        except BaseException, msg:
+        except BaseException as msg:
+            logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
+                                                      "%s. [404]" % (str(msg)), 1)
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             ServerStatusUtil.recover()
 

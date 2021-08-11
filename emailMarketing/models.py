@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.db import models
 from websiteFunctions.models import Websites
@@ -14,7 +14,8 @@ class EmailLists(models.Model):
     owner = models.ForeignKey(Websites, on_delete=models.PROTECT)
     listName = models.CharField(max_length=50, unique=True)
     dateCreated = models.CharField(max_length=200)
-
+    verified = models.IntegerField(default=0)
+    notVerified = models.IntegerField(default=0)
 
 class EmailsInList(models.Model):
     owner = models.ForeignKey(EmailLists, on_delete=models.CASCADE)
@@ -28,9 +29,8 @@ class SMTPHosts(models.Model):
     owner = models.ForeignKey(Administrator, on_delete=models.CASCADE)
     host = models.CharField(max_length=150, unique= True)
     port = models.CharField(max_length=10)
-    userName = models.CharField(max_length=50)
-    password = models.CharField(max_length=50)
-
+    userName = models.CharField(max_length=200)
+    password = models.CharField(max_length=200)
 
 class EmailTemplate(models.Model):
     owner = models.ForeignKey(Administrator, on_delete=models.CASCADE)
@@ -39,7 +39,7 @@ class EmailTemplate(models.Model):
     fromName = models.CharField(max_length=100)
     fromEmail = models.CharField(max_length=150)
     replyTo = models.CharField(max_length=150)
-    emailMessage = models.CharField(max_length=3000000)
+    emailMessage = models.TextField(max_length=65532)
 
 class EmailJobs(models.Model):
     owner = models.ForeignKey(EmailTemplate, on_delete=models.CASCADE)
@@ -48,4 +48,9 @@ class EmailJobs(models.Model):
     totalEmails = models.IntegerField()
     sent = models.IntegerField()
     failed = models.IntegerField()
+
+class ValidationLog(models.Model):
+    owner = models.ForeignKey(EmailLists, on_delete=models.CASCADE)
+    status = models.IntegerField()
+    message = models.TextField()
 

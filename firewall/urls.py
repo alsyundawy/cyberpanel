@@ -1,5 +1,5 @@
 from django.conf.urls import url
-import views
+from . import views
 
 urlpatterns = [
     url(r'^securityHome', views.securityHome, name='securityHome'),
@@ -42,7 +42,7 @@ urlpatterns = [
     ## CSF
 
     url(r'^csf$', views.csf, name='csf'),
-    url(r'^installCSF$', views.installCSF, name='installModSec'),
+    url(r'^installCSF$', views.installCSF, name='installCSF'),
     url(r'^installStatusCSF$', views.installStatusCSF, name='installStatusCSF'),
     url(r'^removeCSF$', views.removeCSF, name='removeCSF'),
     url(r'^fetchCSFSettings$', views.fetchCSFSettings, name='fetchCSFSettings'),
@@ -50,6 +50,17 @@ urlpatterns = [
     url(r'^changeStatus$', views.changeStatus, name='changeStatus'),
     url(r'^modifyPorts$', views.modifyPorts, name='modifyPorts'),
     url(r'^modifyIPs$', views.modifyIPs, name='modifyIPs'),
+
+    ## Imunify
+
+    url(r'^imunify$', views.imunify, name='imunify'),
+    url(r'^submitinstallImunify$', views.submitinstallImunify, name='submitinstallImunify'),
+
+    ## ImunifyAV
+
+    url(r'^imunifyAV$', views.imunifyAV, name='imunifyAV'),
+    url(r'^submitinstallImunifyAV$', views.submitinstallImunifyAV, name='submitinstallImunifyAV'),
+
 
 
 

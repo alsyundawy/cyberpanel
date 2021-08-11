@@ -1,24 +1,37 @@
-#!/usr/local/CyberCP/bin/python2
+#!/usr/local/CyberCP/bin/python
 import os
 import os.path
 import sys
 import django
+
+from plogical.acl import ACLManager
+
 sys.path.append('/usr/local/CyberCP')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "CyberCP.settings")
-django.setup()
+try:
+    django.setup()
+except:
+    pass
 import shutil
-import installUtilities
-from websiteFunctions.models import Websites, ChildDomains, aliasDomains
+from plogical import installUtilities
+
 import subprocess
 import shlex
-import CyberCPLogFileWriter as logging
-from databases.models import Databases
-from mysqlUtilities import mysqlUtilities
-from dnsUtilities import DNS
+from plogical import CyberCPLogFileWriter as logging
+from plogical.mysqlUtilities import mysqlUtilities
+from plogical.dnsUtilities import DNS
 from random import randint
-from processUtilities import ProcessUtilities
+from plogical.processUtilities import ProcessUtilities
 from managePHP.phpManager import PHPManager
-from vhostConfs import vhostConfs
+from plogical.vhostConfs import vhostConfs
+from ApachController.ApacheVhosts import ApacheVhost
+try:
+    from websiteFunctions.models import Websites, ChildDomains, aliasDomains
+    from databases.models import Databases
+except:
+    pass
+import pwd
+import grp
 
 ## If you want justice, you have come to the wrong place.
 
@@ -27,6 +40,7 @@ class vhost:
 
     Server_root = "/usr/local/lsws"
     cyberPanel = "/usr/local/CyberCP"
+    redisConf = '/usr/local/lsws/conf/dvhost_redis.conf'
 
     @staticmethod
     def addUser(virtualHostUser, path):
@@ -34,22 +48,19 @@ class vhost:
 
             FNULL = open(os.devnull, 'w')
             if os.path.exists("/etc/lsb-release"):
-                command = 'adduser --no-create-home --home ' + path + ' --disabled-login --gecos "" ' + virtualHostUser
+                command = '/usr/sbin/adduser --no-create-home --home ' + path + ' --disabled-login --gecos "" ' + virtualHostUser
             else:
-                command = "adduser " + virtualHostUser + " -M -d " + path
+                command = "/usr/sbin/adduser " + virtualHostUser + " -M -d " + path
 
-            cmd = shlex.split(command)
-            subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+            ProcessUtilities.executioner(command)
 
-            command = "groupadd " + virtualHostUser
-            cmd = shlex.split(command)
-            subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+            command = "/usr/sbin/groupadd " + virtualHostUser
+            ProcessUtilities.executioner(command)
 
-            command = "usermod -a -G " + virtualHostUser + " " + virtualHostUser
-            cmd = shlex.split(command)
-            subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+            command = "/usr/sbin/usermod -a -G " + virtualHostUser + " " + virtualHostUser
+            ProcessUtilities.executioner(command)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [addingUsers]")
 
     @staticmethod
@@ -75,51 +86,66 @@ class vhost:
                 cmd = shlex.split(command)
                 subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-            except OSError, msg:
+            except OSError as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [27 Not able create to directories for virtual host [createDirectories]]")
-                return [0, "[27 Not able to directories for virtual host [createDirectories]]"]
+                #return [0, "[27 Not able to directories for virtual host [createDirectories]]"]
 
             try:
                 os.makedirs(pathHTML)
 
-                command = "chown " + virtualHostUser + ":" + virtualHostUser + " " + pathHTML
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                    groupName = 'nobody'
+                else:
+                    groupName = 'nogroup'
+
+                command = "chown " + virtualHostUser + ":%s " % (groupName) + pathHTML
                 cmd = shlex.split(command)
                 subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-            except OSError, msg:
+                command = "chmod 750 %s" % (pathHTML)
+                cmd = shlex.split(command)
+                subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+
+            except OSError as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [33 Not able to directories for virtual host [createDirectories]]")
-                return [0, "[33 Not able to directories for virtual host [createDirectories]]"]
+                #return [0, "[33 Not able to directories for virtual host [createDirectories]]"]
 
             try:
                 os.makedirs(pathLogs)
 
-                command = "chown " + "lscpd" + ":" + "lscpd" + " " + pathLogs
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                    groupName = 'nobody'
+                else:
+                    groupName = 'nogroup'
+
+                command = "chown %s:%s %s" % ('root', groupName, pathLogs)
                 cmd = shlex.split(command)
                 subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
 
                 if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
-                    command = "chmod -R 666 " + pathLogs
+                    command = "chmod -R 750 " + pathLogs
                 else:
-                    command = "chmod -R 755 " + pathLogs
+                    command = "chmod -R 750 " + pathLogs
 
                 cmd = shlex.split(command)
                 subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-            except OSError, msg:
+            except OSError as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [39 Not able to directories for virtual host [createDirectories]]")
-                return [0, "[39 Not able to directories for virtual host [createDirectories]]"]
+                #return [0, "[39 Not able to directories for virtual host [createDirectories]]"]
 
             try:
                 ## For configuration files permissions will be changed later globally.
-                os.makedirs(confPath)
-            except OSError, msg:
+                if not os.path.exists(confPath):
+                    os.makedirs(confPath)
+            except OSError as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [45 Not able to directories for virtual host [createDirectories]]")
-                return [0, "[45 Not able to directories for virtual host [createDirectories]]"]
+                #return [0, "[45 Not able to directories for virtual host [createDirectories]]"]
 
             try:
                 ## For configuration files permissions will be changed later globally.
@@ -129,15 +155,19 @@ class vhost:
                 cmd = shlex.split(command)
                 subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-            except IOError, msg:
+                command = 'chmod 600 %s' % (completePathToConfigFile)
+                cmd = shlex.split(command)
+                subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+
+            except IOError as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [createDirectories]]")
-                return [0, "[45 Not able to directories for virtual host [createDirectories]]"]
+                #return [0, "[45 Not able to directories for virtual host [createDirectories]]"]
 
             return [1, 'None']
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [createDirectories]")
-            return [0, str(msg)]
+            return [1, str(msg)]
 
     @staticmethod
     def finalizeVhostCreation(virtualHostName, virtualHostUser):
@@ -157,7 +187,7 @@ class vhost:
             cmd = shlex.split(command)
             subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [finalizeVhostCreation]")
 
     @staticmethod
@@ -195,6 +225,7 @@ class vhost:
         # General Configurations tab
         if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
             try:
+
                 confFile = open(vhFile, "w+")
 
                 php = PHPManager.getPHPString(phpVersion)
@@ -215,31 +246,68 @@ class vhost:
                 confFile.write(currentConf)
                 confFile.close()
 
-            except BaseException, msg:
+                return 1
+
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [IO Error with per host config file [perHostVirtualConf]]")
                 return 0
-            return 1
         else:
             try:
-                confFile = open(vhFile, "w+")
-                php = PHPManager.getPHPString(phpVersion)
 
-                currentConf = vhostConfs.lswsMasterConf
+                if not os.path.exists(vhost.redisConf):
+                    confFile = open(vhFile, "w+")
+                    php = PHPManager.getPHPString(phpVersion)
 
-                currentConf = currentConf.replace('{virtualHostName}', virtualHostName)
-                currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
-                currentConf = currentConf.replace('{externalApp}', virtualHostUser)
-                currentConf = currentConf.replace('{php}', php)
+                    currentConf = vhostConfs.lswsMasterConf
 
-                confFile.write(currentConf)
+                    currentConf = currentConf.replace('{virtualHostName}', virtualHostName)
+                    currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
+                    currentConf = currentConf.replace('{externalApp}', virtualHostUser)
+                    currentConf = currentConf.replace('{php}', php)
 
-                confFile.close()
-            except BaseException, msg:
+                    confFile.write(currentConf)
+
+                    confFile.close()
+
+                else:
+
+                    ## Non-www
+
+                    currentConf = vhostConfs.lswsRediConfMaster
+
+                    currentConf = currentConf.replace('{virtualHostName}', virtualHostName)
+                    currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
+                    currentConf = currentConf.replace('{externalApp}', virtualHostUser)
+                    currentConf = currentConf.replace('{php}', phpVersion.lstrip('PHP '))
+                    currentConf = currentConf.replace('{uid}', str(pwd.getpwnam(virtualHostUser).pw_uid))
+                    currentConf = currentConf.replace('{gid}', str(grp.getgrnam(virtualHostUser).gr_gid))
+
+                    command = 'redis-cli set %s' % (currentConf)
+                    ProcessUtilities.executioner(command)
+
+                    ## WWW
+
+                    currentConf = vhostConfs.lswsRediConfMasterWWW
+
+                    currentConf = currentConf.replace('{virtualHostName}', 'www.%s' % (virtualHostName))
+                    currentConf = currentConf.replace('{master}', virtualHostName)
+                    currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
+                    currentConf = currentConf.replace('{externalApp}', virtualHostUser)
+                    currentConf = currentConf.replace('{php}', phpVersion.lstrip('PHP '))
+                    currentConf = currentConf.replace('{uid}', str(pwd.getpwnam(virtualHostUser).pw_uid))
+                    currentConf = currentConf.replace('{gid}', str(grp.getgrnam(virtualHostUser).gr_gid))
+
+                    command = 'redis-cli set %s' % (currentConf)
+                    ProcessUtilities.executioner(command)
+
+                return 1
+
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [IO Error with per host config file [perHostVirtualConf]]")
                 return 0
-            return 1
+
 
     @staticmethod
     def createNONSSLMapEntry(virtualHostName):
@@ -260,7 +328,7 @@ class vhost:
                     writeDataToFile.writelines(items)
 
             return 1
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
             return 0
 
@@ -281,7 +349,7 @@ class vhost:
                 writeDataToFile.close()
 
                 return [1,"None"]
-            except BaseException,msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + "223 [IO Error with main config file [createConfigInMainVirtualHostFile]]")
                 return [0,"223 [IO Error with main config file [createConfigInMainVirtualHostFile]]"]
         else:
@@ -293,7 +361,7 @@ class vhost:
 
                 writeDataToFile.close()
                 return [1, "None"]
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + "223 [IO Error with main config file [createConfigInMainVirtualHostFile]]")
                 return [0, "223 [IO Error with main config file [createConfigInMainVirtualHostFile]]"]
@@ -308,6 +376,10 @@ class vhost:
                 vhost.deleteCoreConf(virtualHostName, numberOfSites)
 
                 delWebsite = Websites.objects.get(domain=virtualHostName)
+                externalApp = delWebsite.externalApp
+
+                ##
+
                 databases = Databases.objects.filter(website=delWebsite)
 
                 childDomains = delWebsite.childdomains_set.all()
@@ -318,22 +390,60 @@ class vhost:
                     numberOfSites = Websites.objects.count() + ChildDomains.objects.count()
                     vhost.deleteCoreConf(items.domain, numberOfSites)
 
-                for items in databases:
-                    mysqlUtilities.deleteDatabase(items.dbName, items.dbUser)
+                    ### Delete ACME Folder
 
-                delWebsite.delete()
+                    if os.path.exists('/root/.acme.sh/%s' % (items.domain)):
+                        shutil.rmtree('/root/.acme.sh/%s' % (items.domain))
 
-                ## Deleting DNS Zone if there is any.
+                ## Child check, to make sure no database entires are being deleted from child node
 
-                DNS.deleteDNSZone(virtualHostName)
+                if ACLManager.FindIfChild() == 0:
 
-                installUtilities.installUtilities.reStartLiteSpeed()
+                    for items in databases:
+                        mysqlUtilities.deleteDatabase(items.dbName, items.dbUser)
+
+                    delWebsite.delete()
+
+                    ## Deleting DNS Zone if there is any.
+
+                    DNS.deleteDNSZone(virtualHostName)
+
+                if not os.path.exists(vhost.redisConf):
+                    installUtilities.installUtilities.reStartLiteSpeed()
 
                 ## Delete mail accounts
 
-                command = "sudo rm -rf /home/vmail/" + virtualHostName
+                command = "rm -rf /home/vmail/" + virtualHostName
                 subprocess.call(shlex.split(command))
-            except BaseException, msg:
+
+                ##
+
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                    command = 'userdel -r -f %s' % (externalApp)
+                else:
+                    command = 'deluser %s' % (externalApp)
+
+                ProcessUtilities.executioner(command)
+
+                #
+
+                command = 'groupdel %s' % (externalApp)
+                ProcessUtilities.executioner(command)
+
+                ## Remove git conf folder if present
+
+                gitPath = '/home/cyberpanel/git/%s' % (virtualHostName)
+
+                if os.path.exists(gitPath):
+                    shutil.rmtree(gitPath)
+
+
+                ### Delete Acme folder
+
+                if os.path.exists('/root/.acme.sh/%s' % (virtualHostName)):
+                    shutil.rmtree('/root/.acme.sh/%s' % (virtualHostName))
+
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [Not able to remove virtual host configuration from main configuration file.]")
                 return 0
             return 1
@@ -344,6 +454,13 @@ class vhost:
                 vhost.deleteCoreConf(virtualHostName, numberOfSites)
 
                 delWebsite = Websites.objects.get(domain=virtualHostName)
+                externalApp = delWebsite.externalApp
+
+                ## Cagefs
+
+                command = '/usr/sbin/cagefsctl --disable %s' % (delWebsite.externalApp)
+                ProcessUtilities.normalExecutioner(command)
+
                 databases = Databases.objects.filter(website=delWebsite)
 
                 childDomains = delWebsite.childdomains_set.all()
@@ -354,22 +471,40 @@ class vhost:
                     numberOfSites = Websites.objects.count() + ChildDomains.objects.count()
                     vhost.deleteCoreConf(items.domain, numberOfSites)
 
-                for items in databases:
-                    mysqlUtilities.deleteDatabase(items.dbName, items.dbUser)
 
-                delWebsite.delete()
+                ## child check to make sure no database entires are being deleted from child server
 
-                ## Deleting DNS Zone if there is any.
+                if ACLManager.FindIfChild() == 0:
+                    for items in databases:
+                        mysqlUtilities.deleteDatabase(items.dbName, items.dbUser)
 
-                DNS.deleteDNSZone(virtualHostName)
+                    delWebsite.delete()
+
+                    ## Deleting DNS Zone if there is any.
+
+                    DNS.deleteDNSZone(virtualHostName)
 
                 installUtilities.installUtilities.reStartLiteSpeed()
 
                 ## Delete mail accounts
 
-                command = "sudo rm -rf /home/vmail/" + virtualHostName
+                command = "rm -rf /home/vmail/" + virtualHostName
                 subprocess.call(shlex.split(command))
-            except BaseException, msg:
+
+                ##
+
+                if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                    command = 'userdel -r -f %s' % (externalApp)
+                else:
+                    command = 'deluser %s' % (externalApp)
+
+                ProcessUtilities.executioner(command)
+
+                #
+
+                command = 'groupdel %s' % (externalApp)
+                ProcessUtilities.executioner(command)
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [Not able to remove virtual host configuration from main configuration file.]")
                 return 0
@@ -417,7 +552,12 @@ class vhost:
                             writeDataToFile.writelines(items)
                         if (items.find("}") > -1 and check == 0):
                             check = 1
-            except BaseException, msg:
+
+                ## Delete Apache Conf
+
+                ApacheVhost.DeleteApacheVhost(virtualHostName)
+
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [Not able to remove virtual host configuration from main configuration file.]")
                 return 0
@@ -426,35 +566,42 @@ class vhost:
             virtualHostPath = "/home/" + virtualHostName
             try:
                 shutil.rmtree(virtualHostPath)
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [Not able to remove virtual host directory from /home continuing..]")
 
-            try:
-                confPath = vhost.Server_root + "/conf/vhosts/" + virtualHostName
-                shutil.rmtree(confPath)
-            except BaseException, msg:
-                logging.CyberCPLogFileWriter.writeToFile(
-                    str(msg) + " [Not able to remove virtual host configuration directory from /conf ]")
+            if not os.path.exists(vhost.redisConf):
+                try:
+                    confPath = vhost.Server_root + "/conf/vhosts/" + virtualHostName
+                    shutil.rmtree(confPath)
+                except BaseException as msg:
+                    logging.CyberCPLogFileWriter.writeToFile(
+                        str(msg) + " [Not able to remove virtual host configuration directory from /conf ]")
 
-            try:
-                data = open("/usr/local/lsws/conf/httpd.conf").readlines()
+                try:
+                    data = open("/usr/local/lsws/conf/httpd.conf").readlines()
 
-                writeDataToFile = open("/usr/local/lsws/conf/httpd.conf", 'w')
+                    writeDataToFile = open("/usr/local/lsws/conf/httpd.conf", 'w')
 
-                for items in data:
-                    if items.find('/' + virtualHostName + '/') > -1:
-                        pass
-                    else:
-                        writeDataToFile.writelines(items)
+                    for items in data:
+                        if items.find('/' + virtualHostName + '/') > -1:
+                            pass
+                        else:
+                            writeDataToFile.writelines(items)
 
-                writeDataToFile.close()
+                    writeDataToFile.close()
 
-            except BaseException, msg:
-                logging.CyberCPLogFileWriter.writeToFile(
-                    str(msg) + " [Not able to remove virtual host configuration from main configuration file.]")
-                return 0
-            return 1
+                except BaseException as msg:
+                    logging.CyberCPLogFileWriter.writeToFile(
+                        str(msg) + " [Not able to remove virtual host configuration from main configuration file.]")
+                    return 0
+                return 1
+            else:
+                command = 'redis-cli delete "vhost:%s"' % (virtualHostName)
+                ProcessUtilities.executioner(command)
+
+                command = 'redis-cli delete "vhost:www.%s"' % (virtualHostName)
+                ProcessUtilities.executioner(command)
 
     @staticmethod
     def checkIfVirtualHostExists(virtualHostName):
@@ -464,74 +611,105 @@ class vhost:
 
     @staticmethod
     def changePHP(vhFile, phpVersion):
+        phpDetachUpdatePath = '/home/%s/.lsphp_restart.txt' % (vhFile.split('/')[-2])
         if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
             try:
-                data = open(vhFile, "r").readlines()
+                if ApacheVhost.changePHP(phpVersion, vhFile) == 0:
+                    data = open(vhFile, "r").readlines()
 
-                php = PHPManager.getPHPString(phpVersion)
+                    php = PHPManager.getPHPString(phpVersion)
 
-                if not os.path.exists("/usr/local/lsws/lsphp" + str(php) + "/bin/lsphp"):
-                    print 0, 'This PHP version is not available on your CyberPanel.'
-                    return [0, "[This PHP version is not available on your CyberPanel. [changePHP]"]
+                    if not os.path.exists("/usr/local/lsws/lsphp" + str(php) + "/bin/lsphp"):
+                        print(0, 'This PHP version is not available on your CyberPanel.')
+                        return [0, "[This PHP version is not available on your CyberPanel. [changePHP]"]
 
-                writeDataToFile = open(vhFile, "w")
+                    writeDataToFile = open(vhFile, "w")
 
-                path = "  path                    /usr/local/lsws/lsphp" + str(php) + "/bin/lsphp\n"
+                    path = "  path                    /usr/local/lsws/lsphp" + str(php) + "/bin/lsphp\n"
 
-                for items in data:
-                    if items.find("/usr/local/lsws/lsphp") > -1 and items.find("path") > -1:
-                        writeDataToFile.writelines(path)
-                    else:
-                        writeDataToFile.writelines(items)
+                    for items in data:
+                        if items.find("/usr/local/lsws/lsphp") > -1 and items.find("path") > -1:
+                            writeDataToFile.writelines(path)
+                        else:
+                            writeDataToFile.writelines(items)
 
-                writeDataToFile.close()
+                    writeDataToFile.close()
 
-                installUtilities.installUtilities.reStartLiteSpeed()
+                    writeToFile = open(phpDetachUpdatePath, 'w')
+                    writeToFile.close()
 
-                print "1,None"
+                    installUtilities.installUtilities.reStartLiteSpeed()
+                    try:
+                        os.remove(phpDetachUpdatePath)
+                    except:
+                        pass
+                else:
+                    php = PHPManager.getPHPString(phpVersion)
+                    command = "systemctl restart php%s-php-fpm" % (php)
+                    ProcessUtilities.normalExecutioner(command)
+
+                print("1,None")
                 return 1,'None'
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [IO Error with per host config file [changePHP]")
-                print 0,str(msg)
+                print(0,str(msg))
                 return [0, str(msg) + " [IO Error with per host config file [changePHP]"]
         else:
             try:
-                data = open(vhFile, "r").readlines()
+                if not os.path.exists(vhost.redisConf):
+                    data = open(vhFile, "r").readlines()
 
-                php = PHPManager.getPHPString(phpVersion)
+                    php = PHPManager.getPHPString(phpVersion)
 
-                if not os.path.exists("/usr/local/lsws/lsphp" + str(php) + "/bin/lsphp"):
-                    print 0, 'This PHP version is not available on your CyberPanel.'
-                    return [0, "[This PHP version is not available on your CyberPanel. [changePHP]"]
+                    if not os.path.exists("/usr/local/lsws/lsphp" + str(php) + "/bin/lsphp"):
+                        print(0, 'This PHP version is not available on your CyberPanel.')
+                        return [0, "[This PHP version is not available on your CyberPanel. [changePHP]"]
 
-                writeDataToFile = open(vhFile, "w")
+                    writeDataToFile = open(vhFile, "w")
 
-                finalString = '    AddHandler application/x-httpd-php' + str(php) + ' .php\n'
+                    finalString = '    AddHandler application/x-httpd-php' + str(php) + ' .php\n'
 
-                for items in data:
-                    if items.find("AddHandler application/x-httpd") > -1:
-                        writeDataToFile.writelines(finalString)
-                    else:
-                        writeDataToFile.writelines(items)
+                    for items in data:
+                        if items.find("AddHandler application/x-httpd") > -1:
+                            writeDataToFile.writelines(finalString)
+                        else:
+                            writeDataToFile.writelines(items)
 
-                writeDataToFile.close()
+                    writeDataToFile.close()
 
-                installUtilities.installUtilities.reStartLiteSpeed()
+                    writeToFile = open(phpDetachUpdatePath, 'w')
+                    writeToFile.close()
 
-                print "1,None"
+                    installUtilities.installUtilities.reStartLiteSpeed()
+                    try:
+                        os.remove(phpDetachUpdatePath)
+                    except:
+                        pass
+                else:
+                    command = 'redis-cli get "vhost:%s"' % (vhFile.split('/')[-2])
+                    configData = ProcessUtilities.outputExecutioner(command)
+
+                    import re
+                    configData = re.sub(r'"phpVersion": .*,', '"phpVersion": %s,' % (phpVersion.lstrip('PHP ')), configData)
+
+                    command = "redis-cli set vhost:%s '%s'" % (vhFile.split('/')[-2], configData)
+                    ProcessUtilities.executioner(command)
+
+
+                print("1,None")
                 return 1, 'None'
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [IO Error with per host config file [changePHP]]")
-                print 0, str(msg)
+                print(0, str(msg))
                 return [0, str(msg) + " [IO Error with per host config file [changePHP]]"]
 
     @staticmethod
     def addRewriteRules(virtualHostName, fileName=None):
         try:
             pass
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [IO Error with per host config file [changePHP]]")
             return 0
 
@@ -545,7 +723,7 @@ class vhost:
                     return 1
             return 0
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + " [IO Error with per host config file [checkIfRewriteEnabled]]")
             return 0
@@ -556,12 +734,14 @@ class vhost:
             path = "/home/" + domainName + "/logs/" + domainName + ".access_log"
 
             if not os.path.exists("/home/" + domainName + "/logs"):
-                print "0,0"
+                print("0,0")
+                return 0,0
 
             bwmeta = "/home/" + domainName + "/logs/bwmeta"
 
             if not os.path.exists(path):
-                print "0,0"
+                print("0,0")
+                return 0, 0
 
             if os.path.exists(bwmeta):
                 try:
@@ -576,20 +756,25 @@ class vhost:
                     percentage = float(100) / float(totalAllowed)
                     percentage = float(percentage) * float(inMB)
                 except:
-                    print "0,0"
+                    print("0,0")
+                    return 0, 0
 
                 if percentage > 100.0:
                     percentage = 100
 
-                print str(inMB) + "," + str(percentage)
+                print(str(inMB) + "," + str(percentage))
+                return str(inMB), str(percentage)
             else:
-                print "0,0"
-        except OSError, msg:
+                print("0,0")
+                return 0, 0
+        except OSError as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [findDomainBW]")
-            print "0,0"
-        except ValueError, msg:
+            print("0,0")
+            return 0, 0
+        except ValueError as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [findDomainBW]")
-            print "0,0"
+            print("0,0")
+            return 0, 0
 
     @staticmethod
     def permissionControl(path):
@@ -597,7 +782,7 @@ class vhost:
             command = 'sudo chown -R  cyberpanel:cyberpanel ' + path
             cmd = shlex.split(command)
             res = subprocess.call(cmd)
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
 
     @staticmethod
@@ -609,7 +794,7 @@ class vhost:
 
             res = subprocess.call(cmd)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg))
 
     @staticmethod
@@ -617,7 +802,7 @@ class vhost:
         try:
             alias = aliasDomains.objects.get(aliasDomain=aliasDomain)
             return 1
-        except BaseException, msg:
+        except BaseException as msg:
             return 0
 
     @staticmethod
@@ -628,7 +813,7 @@ class vhost:
                     return 1
             return 0
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [checkIfSSLAliasExists]")
             return 1
 
@@ -645,7 +830,7 @@ class vhost:
                 if (items.find("listener SSL") > -1):
                     sslCheck = 1
                 if items.find(masterDomain) > -1 and items.find('map') > -1 and sslCheck == 1:
-                    data = filter(None, items.split(" "))
+                    data = [_f for _f in items.split(" ") if _f]
                     if data[1] == masterDomain:
                         if vhost.checkIfSSLAliasExists(data, aliasDomain) == 0:
                             writeToFile.writelines(items.rstrip('\n') + ", " + aliasDomain + "\n")
@@ -658,7 +843,7 @@ class vhost:
             writeToFile.close()
             installUtilities.installUtilities.reStartLiteSpeed()
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + "  [createAliasSSLMap]")
 
     ## Child Domain Functions
@@ -680,7 +865,7 @@ class vhost:
             cmd = shlex.split(command)
             subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [finalizeDomainCreation]")
 
     @staticmethod
@@ -694,33 +879,47 @@ class vhost:
 
         try:
             os.makedirs(path)
-            command = "chown " + virtualHostUser + ":" + virtualHostUser + " " + path
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                groupName = 'nobody'
+            else:
+                groupName = 'nogroup'
+
+            command = "chown " + virtualHostUser + ":%s " % (groupName) + path
             cmd = shlex.split(command)
             subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-        except OSError, msg:
+
+            command = "chmod 750 %s" % (path)
+            cmd = shlex.split(command)
+            subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+
+        except OSError as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "329 [Not able to create directories for virtual host [createDirectoryForDomain]]")
 
         try:
             ## For configuration files permissions will be changed later globally.
             os.makedirs(confPath)
-        except OSError, msg:
+        except OSError as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "335 [Not able to create directories for virtual host [createDirectoryForDomain]]")
-            return [0, "[344 Not able to directories for virtual host [createDirectoryForDomain]]"]
+            #return [0, "[344 Not able to directories for virtual host [createDirectoryForDomain]]"]
 
         try:
             ## For configuration files permissions will be changed later globally.
             file = open(completePathToConfigFile, "w+")
-        except IOError, msg:
+        except IOError as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [createDirectoryForDomain]]")
-            return [0, "[351 Not able to directories for virtual host [createDirectoryForDomain]]"]
+            #return [0, "[351 Not able to directories for virtual host [createDirectoryForDomain]]"]
 
         if vhost.perHostDomainConf(path, masterDomain, domain, completePathToConfigFile,
                                    administratorEmail, phpVersion, virtualHostUser, openBasedir) == 1:
             return [1, "None"]
         else:
-            return [0, "[359 Not able to create per host virtual configurations [createDirectoryForDomain]"]
+            pass
+            #return [0, "[359 Not able to create per host virtual configurations [createDirectoryForDomain]"]
+
+        return [1, "None"]
 
     @staticmethod
     def perHostDomainConf(path, masterDomain, domain, vhFile, administratorEmail, phpVersion, virtualHostUser, openBasedir):
@@ -749,7 +948,7 @@ class vhost:
                 confFile.write(currentConf)
                 confFile.close()
 
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [IO Error with per host config file [perHostDomainConf]]")
                 return 0
@@ -757,22 +956,58 @@ class vhost:
         else:
             try:
 
-                confFile = open(vhFile, "w+")
-                php = PHPManager.getPHPString(phpVersion)
+                if not os.path.exists(vhost.redisConf):
+                    confFile = open(vhFile, "w+")
+                    php = PHPManager.getPHPString(phpVersion)
 
-                currentConf = vhostConfs.lswsChildConf
+                    currentConf = vhostConfs.lswsChildConf
 
-                currentConf = currentConf.replace('{virtualHostName}', domain)
-                currentConf = currentConf.replace('{masterDomain}', masterDomain)
-                currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
-                currentConf = currentConf.replace('{externalApp}', virtualHostUser)
-                currentConf = currentConf.replace('{path}', path)
-                currentConf = currentConf.replace('{php}', php)
+                    currentConf = currentConf.replace('{virtualHostName}', domain)
+                    currentConf = currentConf.replace('{masterDomain}', masterDomain)
+                    currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
+                    currentConf = currentConf.replace('{externalApp}', virtualHostUser)
+                    currentConf = currentConf.replace('{path}', path)
+                    currentConf = currentConf.replace('{php}', php)
 
-                confFile.write(currentConf)
+                    confFile.write(currentConf)
 
-                confFile.close()
-            except BaseException, msg:
+                    confFile.close()
+
+                else:
+
+                    ## Non www
+
+                    currentConf = vhostConfs.lswsRediConfChild
+
+                    currentConf = currentConf.replace('{virtualHostName}', domain)
+                    currentConf = currentConf.replace('{masterDomain}', masterDomain)
+                    currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
+                    currentConf = currentConf.replace('{path}', path)
+                    currentConf = currentConf.replace('{externalApp}', virtualHostUser)
+                    currentConf = currentConf.replace('{php}', phpVersion.lstrip('PHP '))
+                    currentConf = currentConf.replace('{uid}', str(pwd.getpwnam(virtualHostUser).pw_uid))
+                    currentConf = currentConf.replace('{gid}', str(grp.getgrnam(virtualHostUser).gr_gid))
+
+                    command = 'redis-cli set %s' % (currentConf)
+                    ProcessUtilities.executioner(command)
+
+                    ## www
+
+                    currentConf = vhostConfs.lswsRediConfChildWWW
+
+                    currentConf = currentConf.replace('{virtualHostName}', 'www.%s' % (domain))
+                    currentConf = currentConf.replace('{masterDomain}', masterDomain)
+                    currentConf = currentConf.replace('{administratorEmail}', administratorEmail)
+                    currentConf = currentConf.replace('{path}', path)
+                    currentConf = currentConf.replace('{externalApp}', virtualHostUser)
+                    currentConf = currentConf.replace('{php}', phpVersion.lstrip('PHP '))
+                    currentConf = currentConf.replace('{uid}', str(pwd.getpwnam(virtualHostUser).pw_uid))
+                    currentConf = currentConf.replace('{gid}', str(grp.getgrnam(virtualHostUser).gr_gid))
+
+                    command = 'redis-cli set %s' % (currentConf)
+                    ProcessUtilities.executioner(command)
+
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + " [IO Error with per host config file [perHostDomainConf]]")
                 return 0
@@ -798,7 +1033,7 @@ class vhost:
 
                 return [1, "None"]
 
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + "223 [IO Error with main config file [createConfigInMainDomainHostFile]]")
                 return [0, "223 [IO Error with main config file [createConfigInMainDomainHostFile]]"]
@@ -809,7 +1044,7 @@ class vhost:
                 writeDataToFile.writelines(configFile)
                 writeDataToFile.close()
                 return [1, "None"]
-            except BaseException, msg:
+            except BaseException as msg:
                 logging.CyberCPLogFileWriter.writeToFile(
                     str(msg) + "223 [IO Error with main config file [createConfigInMainDomainHostFile]]")
                 return [0, "223 [IO Error with main config file [createConfigInMainDomainHostFile]]"]

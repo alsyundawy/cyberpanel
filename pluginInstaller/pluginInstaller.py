@@ -1,10 +1,12 @@
+import sys
+sys.path.append('/usr/local/CyberCP')
 import subprocess
 import shlex
 import argparse
 import os
-import tarfile
 import shutil
 import time
+from plogical.processUtilities import ProcessUtilities
 
 class pluginInstaller:
     installLogPath = "/home/cyberpanel/modSecInstallLog"
@@ -14,11 +16,16 @@ class pluginInstaller:
     @staticmethod
     def stdOut(message):
         print("\n\n")
-        print ("[" + time.strftime(
-            "%I-%M-%S-%a-%b-%Y") + "] #########################################################################\n")
-        print("[" + time.strftime("%I-%M-%S-%a-%b-%Y") + "] " + message + "\n")
-        print ("[" + time.strftime(
-            "%I-%M-%S-%a-%b-%Y") + "] #########################################################################\n")
+        print(("[" + time.strftime(
+            "%m.%d.%Y_%H-%M-%S") + "] #########################################################################\n"))
+        print(("[" + time.strftime("%m.%d.%Y_%H-%M-%S") + "] " + message + "\n"))
+        print(("[" + time.strftime(
+            "%m.%d.%Y_%H-%M-%S") + "] #########################################################################\n"))
+
+    @staticmethod
+    def migrationsEnabled(pluginName: str) -> bool:
+        pluginHome = '/usr/local/CyberCP/' + pluginName
+        return os.path.exists(pluginHome + '/enable_migrations')
 
     ### Functions Related to plugin installation.
 
@@ -73,10 +80,11 @@ class pluginInstaller:
         writeToFile = open("/usr/local/CyberCP/baseTemplate/templates/baseTemplate/index.html", 'w')
 
         for items in data:
-            if items.find("{% url 'installed' %}") > -1:
+            if items.find("{# pluginsList #}") > -1:
                 writeToFile.writelines(items)
+                writeToFile.writelines("                                ")
                 writeToFile.writelines(
-                    '<li><a href="{% url \'' + pluginName + '\' %}" title="{% trans \'' + pluginName + '\' %}"><span>{% trans "' + pluginName + '" %}</span></a></li>')
+                    '<li><a href="{% url \'' + pluginName + '\' %}" title="{% trans \'' + pluginName + '\' %}"><span>{% trans "' + pluginName + '" %}</span></a></li>\n')
             else:
                 writeToFile.writelines(items)
 
@@ -91,7 +99,7 @@ class pluginInstaller:
 
         os.chdir('/usr/local/CyberCP')
 
-        command = "python manage.py collectstatic --noinput"
+        command = "/usr/local/CyberCP/bin/python manage.py collectstatic --noinput"
         subprocess.call(shlex.split(command))
 
         command = "mv /usr/local/CyberCP/static /usr/local/lscp/cyberpanel"
@@ -101,7 +109,18 @@ class pluginInstaller:
         os.chdir(currentDir)
 
     @staticmethod
-    def preScript(pluginName):
+    def installMigrations(pluginName):
+        currentDir = os.getcwd()
+        os.chdir('/usr/local/CyberCP')
+        command = "/usr/local/CyberCP/bin/python manage.py makemigrations %s" % pluginName
+        subprocess.call(shlex.split(command))
+        command = "/usr/local/CyberCP/bin/python manage.py migrate %s" % pluginName
+        subprocess.call(shlex.split(command))
+        os.chdir(currentDir)
+
+
+    @staticmethod
+    def preInstallScript(pluginName):
         pluginHome = '/usr/local/CyberCP/' + pluginName
 
         if os.path.exists(pluginHome + '/pre_install'):
@@ -112,7 +131,7 @@ class pluginInstaller:
             subprocess.call(shlex.split(command))
 
     @staticmethod
-    def postScript(pluginName):
+    def postInstallScript(pluginName):
         pluginHome = '/usr/local/CyberCP/' + pluginName
 
         if os.path.exists(pluginHome + '/post_install'):
@@ -120,6 +139,17 @@ class pluginInstaller:
             subprocess.call(shlex.split(command))
 
             command = pluginHome + '/post_install'
+            subprocess.call(shlex.split(command))
+
+    @staticmethod
+    def preRemoveScript(pluginName):
+        pluginHome = '/usr/local/CyberCP/' + pluginName
+
+        if os.path.exists(pluginHome + '/pre_remove'):
+            command = 'chmod +x ' + pluginHome + '/pre_remove'
+            subprocess.call(shlex.split(command))
+
+            command = pluginHome + '/pre_remove'
             subprocess.call(shlex.split(command))
 
 
@@ -135,14 +165,8 @@ class pluginInstaller:
             ##
 
             pluginInstaller.stdOut('Executing pre_install script..')
-            pluginInstaller.preScript(pluginName)
+            pluginInstaller.preInstallScript(pluginName)
             pluginInstaller.stdOut('pre_install executed.')
-
-            ##
-
-            pluginInstaller.stdOut('Executing post_install script..')
-            pluginInstaller.postScript(pluginName)
-            pluginInstaller.stdOut('post_install executed.')
 
             ##
 
@@ -150,7 +174,7 @@ class pluginInstaller:
             pluginInstaller.upgradingSettingsFile(pluginName)
             pluginInstaller.stdOut('Settings file restored.')
 
-            ###
+            ##
 
             pluginInstaller.stdOut('Upgrading URLs')
             pluginInstaller.upgradingURLs(pluginName)
@@ -164,13 +188,9 @@ class pluginInstaller:
 
             ##
 
-            ##
-
             pluginInstaller.stdOut('Adding interface link..')
             pluginInstaller.addInterfaceLink(pluginName)
             pluginInstaller.stdOut('Interface link added.')
-
-            ##
 
             ##
 
@@ -180,11 +200,28 @@ class pluginInstaller:
 
             ##
 
+            if pluginInstaller.migrationsEnabled(pluginName):
+                pluginInstaller.stdOut('Running Migrations..')
+                pluginInstaller.installMigrations(pluginName)
+                pluginInstaller.stdOut('Migrations Completed..')
+            else:
+                pluginInstaller.stdOut('Migrations not enabled, add file \'enable_migrations\' to plugin to enable')
+
+            ##
+
             pluginInstaller.restartGunicorn()
+
+            ##
+
+            pluginInstaller.stdOut('Executing post_install script..')
+            pluginInstaller.postInstallScript(pluginName)
+            pluginInstaller.stdOut('post_install executed.')
+
+            ##
 
             pluginInstaller.stdOut('Plugin successfully installed.')
 
-        except BaseException, msg:
+        except BaseException as msg:
             pluginInstaller.stdOut(str(msg))
 
     ### Functions Related to plugin installation.
@@ -240,8 +277,31 @@ class pluginInstaller:
         writeToFile.close()
 
     @staticmethod
+    def removeMigrations(pluginName):
+        currentDir = os.getcwd()
+        os.chdir('/usr/local/CyberCP')
+        command = "/usr/local/CyberCP/bin/python manage.py migrate %s zero" % pluginName
+        subprocess.call(shlex.split(command))
+        os.chdir(currentDir)
+
+    @staticmethod
     def removePlugin(pluginName):
         try:
+            ##
+
+            pluginInstaller.stdOut('Executing pre_remove script..')
+            pluginInstaller.preRemoveScript(pluginName)
+            pluginInstaller.stdOut('pre_remove executed.')
+
+            ##
+
+            if pluginInstaller.migrationsEnabled(pluginName):
+                pluginInstaller.stdOut('Removing migrations..')
+                pluginInstaller.removeMigrations(pluginName)
+                pluginInstaller.stdOut('Migrations removed..')
+            else:
+                pluginInstaller.stdOut('Migrations not enabled, add file \'enable_migrations\' to plugin to enable')
+
             ##
 
             pluginInstaller.stdOut('Removing files..')
@@ -278,15 +338,16 @@ class pluginInstaller:
 
             pluginInstaller.stdOut('Plugin successfully removed.')
 
-        except BaseException, msg:
+        except BaseException as msg:
             pluginInstaller.stdOut(str(msg))
 
     ####
 
     @staticmethod
     def restartGunicorn():
-        command = 'systemctl restart gunicorn.socket'
-        subprocess.call(shlex.split(command))
+        command = 'systemctl restart lscpd'
+        ProcessUtilities.normalExecutioner(command)
+
 
 
 

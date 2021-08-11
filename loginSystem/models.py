@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.db import models
+from CyberCP.SecurityLevel import SecurityLevel
+
 
 # Create your models here.
-
 class ACL(models.Model):
    name = models.CharField(unique=True,max_length = 50)
    adminStatus = models.IntegerField(default=0)
@@ -14,6 +12,7 @@ class ACL(models.Model):
 
    ## User Management
    createNewUser = models.IntegerField(default=0)
+   listUsers = models.IntegerField(default=0)
    deleteUser = models.IntegerField(default=0)
    resellerCenter = models.IntegerField(default=0)
    changeUserACL = models.IntegerField(default=0)
@@ -28,6 +27,7 @@ class ACL(models.Model):
    ## Package Management
 
    createPackage = models.IntegerField(default=0)
+   listPackages = models.IntegerField(default=0)
    deletePackage = models.IntegerField(default=0)
    modifyPackage = models.IntegerField(default=0)
 
@@ -47,6 +47,7 @@ class ACL(models.Model):
    ## Email Management
 
    createEmail = models.IntegerField(default=1)
+   listEmails = models.IntegerField(default=1)
    deleteEmail = models.IntegerField(default=1)
    emailForwarding = models.IntegerField(default=1)
    changeEmailPassword = models.IntegerField(default=1)
@@ -63,7 +64,7 @@ class ACL(models.Model):
    createBackup = models.IntegerField(default=1)
    restoreBackup = models.IntegerField(default=0)
    addDeleteDestinations = models.IntegerField(default=0)
-   scheDuleBackups = models.IntegerField(default=0)
+   scheduleBackups = models.IntegerField(default=0)
    remoteBackups = models.IntegerField(default=0)
 
    ## SSL Management
@@ -71,6 +72,9 @@ class ACL(models.Model):
    manageSSL = models.IntegerField(default=1)
    hostnameSSL = models.IntegerField(default=0)
    mailServerSSL = models.IntegerField(default=0)
+   config = models.TextField(default='{}')
+
+
 
 class Administrator(models.Model):
    userName = models.CharField(unique=True,max_length = 50)
@@ -81,9 +85,18 @@ class Administrator(models.Model):
    type = models.IntegerField()
    owner = models.IntegerField(default=1)
    token = models.CharField(max_length=500, default='None')
+   api = models.IntegerField(default=0)
+   securityLevel = models.IntegerField(
+      default=0,
+      choices=[(tag, tag.value) for tag in SecurityLevel]
+   )
+   state = models.CharField(max_length=10, default='ACTIVE')
 
    initWebsitesLimit = models.IntegerField(default=0)
-   acl = models.ForeignKey(ACL, default=1)
+   acl = models.ForeignKey(ACL, default=1, on_delete=models.PROTECT)
+   twoFA = models.IntegerField(default=0)
+   secretKey = models.CharField(max_length=50, default='None')
+   config = models.TextField(default='{}')
 
 
 

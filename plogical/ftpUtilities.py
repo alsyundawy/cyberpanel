@@ -1,12 +1,12 @@
-#!/usr/local/CyberCP/bin/python2
+#!/usr/local/CyberCP/bin/python
 import os,sys
 sys.path.append('/usr/local/CyberCP')
 import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "CyberCP.settings")
 django.setup()
-import mysqlUtilities as sql
+from plogical import mysqlUtilities as sql
 import subprocess
-import CyberCPLogFileWriter as logging
+from plogical import CyberCPLogFileWriter as logging
 import os
 import shlex
 import argparse
@@ -17,10 +17,10 @@ import grp
 import hashlib
 from ftp.models import Users
 from datetime import datetime
+from plogical.processUtilities import ProcessUtilities
 
 
 class FTPUtilities:
-
 
     @staticmethod
     def createNewFTPAccount(udb,upass,username,password,path):
@@ -34,15 +34,15 @@ class FTPUtilities:
 
             res = subprocess.call(cmd)
             if res == 1:
-                print "Permissions not changed."
+                print("Permissions not changed.")
             else:
-                print "User permissions setted."
+                print("User permissions setted.")
 
             query = "INSERT INTO ftp_ftpuser (userid,passwd,homedir) VALUES ('" + username + "'" +","+"'"+password+"'"+","+"'"+path+"'"+");"
-            print query
+            print(query)
             sql.mysqlUtilities.SendQuery(udb,upass, "ftp", query)
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + " [createNewFTPAccount]")
             return 0
@@ -61,10 +61,10 @@ class FTPUtilities:
             res = subprocess.call(cmd)
 
             if res == 1:
-                print "Permissions not changed."
+                print("Permissions not changed.")
                 return 0
             else:
-                print "User permissions setted."
+                print("User permissions setted.")
 
 
 
@@ -79,7 +79,7 @@ class FTPUtilities:
             else:
                 return 1
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + " [createNewFTPAccount]")
             return 0
@@ -89,18 +89,13 @@ class FTPUtilities:
     @staticmethod
     def ftpFunctions(path,externalApp):
         try:
-            FNULL = open(os.devnull, 'w')
 
-            if not os.path.exists(path):
-                os.makedirs(path)
-
-            command = "chown " + externalApp + ":" + externalApp + " " + path
-            cmd = shlex.split(command)
-            subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+            command = 'mkdir %s' % (path)
+            ProcessUtilities.executioner(command, externalApp)
 
             return 1,'None'
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(
                 str(msg) + "  [ftpFunctions]")
             return 0, str(msg)
@@ -126,7 +121,7 @@ class FTPUtilities:
             path = path.lstrip("/")
 
             if path != 'None':
-                path = "/home/" + domainName + "/public_html/" + path
+                path = "/home/" + domainName + "/" + path
 
                 ## Security Check
 
@@ -144,8 +139,12 @@ class FTPUtilities:
             else:
                 path = "/home/" + domainName
 
+            if os.path.islink(path):
+                print("0, %s file is symlinked." % (path))
+                return 0
+
             hash = hashlib.md5()
-            hash.update(password)
+            hash.update(password.encode('utf-8'))
 
             admin = Administrator.objects.get(userName=owner)
 
@@ -176,12 +175,12 @@ class FTPUtilities:
             else:
                 raise BaseException("Exceeded maximum amount of FTP accounts allowed for the package.")
 
-            print "1,None"
+            print("1,None")
             return 1,'None'
 
-        except BaseException, msg:
+        except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [submitFTPCreation]")
-            print "0,"+str(msg)
+            print("0,"+str(msg))
             return 0, str(msg)
 
     @staticmethod
@@ -190,21 +189,21 @@ class FTPUtilities:
             ftp = Users.objects.get(user=ftpUsername)
             ftp.delete()
             return 1,'None'
-        except BaseException, msg:
+        except BaseException as msg:
             return 0, str(msg)
 
     @staticmethod
     def changeFTPPassword(userName, password):
         try:
             hash = hashlib.md5()
-            hash.update(password)
+            hash.update(password.encode('utf-8'))
 
             ftp = Users.objects.get(user=userName)
             ftp.password = hash.hexdigest()
             ftp.save()
 
             return 1, None
-        except BaseException, msg:
+        except BaseException as msg:
             return 0,str(msg)
 
     @staticmethod

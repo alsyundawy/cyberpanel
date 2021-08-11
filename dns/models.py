@@ -1,11 +1,11 @@
-from __future__ import unicode_literals
+
 
 from django.db import models
 from loginSystem.models import Administrator
 
 
 class Domains(models.Model):
-    admin = models.ForeignKey(Administrator,on_delete=models.CASCADE)
+    admin = models.ForeignKey(Administrator,on_delete=models.CASCADE, default=1, null=True)
     name = models.CharField(unique=True, max_length=255)
     master = models.CharField(max_length=128, blank=True, null=True)
     last_check = models.IntegerField(blank=True, null=True)
@@ -18,12 +18,12 @@ class Domains(models.Model):
 
 
 class Records(models.Model):
-    domainOwner = models.ForeignKey(Domains, on_delete=models.CASCADE)
+    domainOwner = models.ForeignKey(Domains, on_delete=models.CASCADE, null=True)
     id = models.BigAutoField(primary_key=True)
     domain_id = models.IntegerField(blank=True, null=True)
     name = models.CharField(max_length=255, blank=True, null=True)
     type = models.CharField(max_length=10, blank=True, null=True)
-    content = models.CharField(max_length=64000, blank=True, null=True)
+    content = models.CharField(max_length=1000, blank=True, null=True)
     ttl = models.IntegerField(blank=True, null=True)
     prio = models.IntegerField(blank=True, null=True)
     change_date = models.IntegerField(blank=True, null=True)
@@ -41,7 +41,7 @@ class Comments(models.Model):
     type = models.CharField(max_length=10)
     modified_at = models.IntegerField()
     account = models.CharField(max_length=40)
-    comment = models.CharField(max_length=64000)
+    comment = models.TextField()
 
     class Meta:
         db_table = 'comments'

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 # Create your views here.
 import json
@@ -9,7 +9,10 @@ from django.shortcuts import redirect
 from backup.backupManager import BackupManager
 from backup.pluginManager import pluginManager
 from loginSystem.views import loadLoginPage
-
+import os
+from plogical.CyberCPLogFileWriter import CyberCPLogFileWriter as logging
+from django.shortcuts import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
 
 def loadBackupHome(request):
     try:
@@ -27,6 +30,70 @@ def backupSite(request):
     except KeyError:
         return redirect(loadLoginPage)
 
+def gDrive(request):
+    try:
+        userID = request.session['userID']
+        bm = BackupManager()
+        return bm.gDrive(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def gDriveSetup(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.gDriveSetup(userID, request)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchgDriveSites(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.fetchgDriveSites(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def addSitegDrive(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.addSitegDrive(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def deleteAccountgDrive(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.deleteAccountgDrive(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def changeAccountFrequencygDrive(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.changeAccountFrequencygDrive(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def deleteSitegDrive(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.deleteSitegDrive(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchDriveLogs(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.fetchDriveLogs(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
 def restoreSite(request):
     try:
         userID = request.session['userID']
@@ -34,6 +101,7 @@ def restoreSite(request):
         return bm.restoreSite(request, userID)
     except KeyError:
         return redirect(loadLoginPage)
+
 
 def getCurrentBackups(request):
     try:
@@ -45,7 +113,7 @@ def getCurrentBackups(request):
 
 def submitBackupCreation(request):
     try:
-        userID = 1
+        userID = request.session['userID']
 
         result = pluginManager.preSubmitBackupCreation(request)
         if result != 200:
@@ -56,8 +124,9 @@ def submitBackupCreation(request):
 
         return coreResult
 
-    except KeyError:
-        return redirect(loadLoginPage)
+    except BaseException as msg:
+        logging.writeToFile(str(msg))
+
 
 def backupStatus(request):
     try:
@@ -67,6 +136,7 @@ def backupStatus(request):
     except KeyError:
         return redirect(loadLoginPage)
 
+
 def cancelBackupCreation(request):
     try:
         userID = request.session['userID']
@@ -74,6 +144,7 @@ def cancelBackupCreation(request):
         return wm.cancelBackupCreation(userID, json.loads(request.body))
     except KeyError:
         return redirect(loadLoginPage)
+
 
 def deleteBackup(request):
     try:
@@ -95,18 +166,21 @@ def deleteBackup(request):
     except KeyError:
         return redirect(loadLoginPage)
 
+
 def submitRestore(request):
     try:
+        userID = request.session['userID']
         result = pluginManager.preSubmitRestore(request)
         if result != 200:
             return result
 
         wm = BackupManager()
-        coreResult = wm.submitRestore(json.loads(request.body))
+        coreResult = wm.submitRestore(json.loads(request.body), userID)
 
         return coreResult
     except KeyError:
         return redirect(loadLoginPage)
+
 
 def restoreStatus(request):
     try:
@@ -115,6 +189,7 @@ def restoreStatus(request):
     except KeyError:
         return redirect(loadLoginPage)
 
+
 def backupDestinations(request):
     try:
         userID = request.session['userID']
@@ -122,6 +197,7 @@ def backupDestinations(request):
         return bm.backupDestinations(request, userID)
     except KeyError:
         return redirect(loadLoginPage)
+
 
 def submitDestinationCreation(request):
     try:
@@ -311,5 +387,91 @@ def cancelRemoteBackup(request):
         userID = request.session['userID']
         wm = BackupManager()
         return wm.cancelRemoteBackup(userID, json.loads(request.body))
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def backupLogs(request):
+    try:
+        userID = request.session['userID']
+        bm = BackupManager()
+        return bm.backupLogs(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchLogs(request):
+    try:
+        userID = request.session['userID']
+
+        wm = BackupManager()
+        return wm.fetchLogs(userID, json.loads(request.body))
+
+    except KeyError:
+        return redirect(loadLoginPage)
+
+@csrf_exempt
+def localInitiate(request):
+    try:
+        data = json.loads(request.body)
+        randomFile = data['randomFile']
+
+        if os.path.exists(randomFile):
+            wm = BackupManager()
+            return wm.submitBackupCreation(1, json.loads(request.body))
+    except BaseException as msg:
+        logging.writeToFile(str(msg))
+
+def fetchgNormalSites(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.fetchgNormalSites(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchNormalJobs(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.fetchNormalJobs(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def addSiteNormal(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.addSiteNormal(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def deleteSiteNormal(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.deleteSiteNormal(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def changeAccountFrequencyNormal(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.changeAccountFrequencyNormal(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def deleteAccountNormal(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.deleteAccountNormal(request, userID)
+    except KeyError:
+        return redirect(loadLoginPage)
+
+def fetchNormalLogs(request):
+    try:
+        userID = request.session['userID']
+        wm = BackupManager()
+        return wm.fetchNormalLogs(request, userID)
     except KeyError:
         return redirect(loadLoginPage)
