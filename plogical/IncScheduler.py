@@ -13,14 +13,15 @@ import json
 from websiteFunctions.models import GitLogs, Websites, GDrive, GDriveJobLogs
 from websiteFunctions.website import WebsiteManager
 import time
+import datetime
 import google.oauth2.credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from plogical.backupSchedule import backupSchedule
 import requests
+import socket
 from websiteFunctions.models import NormalBackupJobs, NormalBackupJobLogs
 from boto3.s3.transfer import TransferConfig
-
 try:
     from s3Backups.models import BackupPlan, BackupLogs
     import boto3
@@ -30,8 +31,10 @@ try:
     from plogical.processUtilities import ProcessUtilities
 except:
     pass
+import threading as multi
 
-class IncScheduler():
+
+class IncScheduler(multi.Thread):
     logPath = '/home/cyberpanel/incbackuplogs'
     gitFolder = '/home/cyberpanel/git'
 
@@ -44,13 +47,23 @@ class IncScheduler():
     currentStatus = 'currentStatus'
     lastRun = 'lastRun'
 
+    def __init__(self, function, extraArgs):
+        multi.Thread.__init__(self)
+        self.function = function
+        self.data = extraArgs
+
+    def run(self):
+        if self.function == 'startBackup':
+            IncScheduler.startBackup(self.data['freq'])
+
     @staticmethod
     def startBackup(type):
         try:
             logging.statusWriter(IncScheduler.logPath, 'Starting Incremental Backup job..', 1)
             tempPath = "/home/cyberpanel/" + str(randint(1000, 9999))
             for job in BackupJob.objects.all():
-                logging.statusWriter(IncScheduler.logPath, 'Job Description:\n\n Destination: %s, Frequency: %s.\n ' % (job.destination, job.frequency), 1)
+                logging.statusWriter(IncScheduler.logPath, 'Job Description:\n\n Destination: %s, Frequency: %s.\n ' % (
+                job.destination, job.frequency), 1)
                 if job.frequency == type:
                     for web in job.jobsites_set.all():
                         logging.statusWriter(IncScheduler.logPath, 'Backing up %s.' % (web.website), 1)
@@ -101,7 +114,8 @@ class IncScheduler():
                                     except:
                                         pass
 
-                                    logging.statusWriter(IncScheduler.logPath, 'Failed backup for %s, error: %s.' % (web.website, result), 1)
+                                    logging.statusWriter(IncScheduler.logPath,
+                                                         'Failed backup for %s, error: %s.' % (web.website, result), 1)
                                     break
 
         except BaseException as msg:
@@ -114,9 +128,10 @@ class IncScheduler():
                 finalText = ''
                 web = Websites.objects.get(domain=website)
 
-                message = '[%s Cron] Checking if %s has any pending commits on %s.' % (type, website, time.strftime("%m.%d.%Y_%H-%M-%S"))
+                message = '[%s Cron] Checking if %s has any pending commits on %s.' % (
+                type, website, time.strftime("%m.%d.%Y_%H-%M-%S"))
                 finalText = '%s\n' % (message)
-                GitLogs(owner=web, type='INFO', message = message).save()
+                GitLogs(owner=web, type='INFO', message=message).save()
 
                 finalPathInside = '%s/%s' % (IncScheduler.gitFolder, website)
 
@@ -132,7 +147,8 @@ class IncScheduler():
                         data = {}
                         data['domain'] = gitConf['domain']
                         data['folder'] = gitConf['folder']
-                        data['commitMessage'] = 'Auto commit by CyberPanel %s cron on %s' % (type, time.strftime('%m-%d-%Y_%H-%M-%S'))
+                        data['commitMessage'] = 'Auto commit by CyberPanel %s cron on %s' % (
+                        type, time.strftime('%m-%d-%Y_%H-%M-%S'))
 
                         if gitConf['autoCommit'] == type:
 
@@ -165,8 +181,8 @@ class IncScheduler():
                         message = 'File: %s, Status: %s' % (file, str(msg))
                         finalText = '%s\n%s' % (finalText, message)
 
-
-                message = '[%s Cron] Finished checking for %s on %s.' % (type, website, time.strftime("%m.%d.%Y_%H-%M-%S"))
+                message = '[%s Cron] Finished checking for %s on %s.' % (
+                type, website, time.strftime("%m.%d.%Y_%H-%M-%S"))
                 finalText = '%s\n%s' % (finalText, message)
                 logging.SendEmail(web.adminEmail, web.adminEmail, finalText, 'Git report for %s.' % (web.domain))
                 GitLogs(owner=web, type='INFO', message=message).save()
@@ -176,6 +192,7 @@ class IncScheduler():
 
     @staticmethod
     def checkDiskUsage():
+        sender_email = 'root@%s' % (socket.gethostname())
 
         try:
 
@@ -188,21 +205,22 @@ class IncScheduler():
             from plogical.acl import ACLManager
             message = '%s - Disk Usage Warning - CyberPanel' % (ACLManager.fetchIP())
 
-            if diskUsage >= 50 and diskUsage <= 60 :
+            if diskUsage >= 50 and diskUsage <= 60:
 
                 finalText = 'Current disk usage at "/" is %s percent. No action required.' % (str(diskUsage))
-                logging.SendEmail(admin.email, admin.email, finalText, message)
+                logging.SendEmail(sender_email, admin.email, finalText, message)
 
             elif diskUsage >= 60 and diskUsage <= 80:
 
-                finalText = 'Current disk usage at "/" is %s percent. We recommend clearing log directory by running \n\n rm -rf /usr/local/lsws/logs/*. \n\n When disk usage go above 80 percent we will automatically run this command.' % (str(diskUsage))
-                logging.SendEmail(admin.email, admin.email, finalText, message)
+                finalText = 'Current disk usage at "/" is %s percent. We recommend clearing log directory by running \n\n rm -rf /usr/local/lsws/logs/*. \n\n When disk usage go above 80 percent we will automatically run this command.' % (
+                    str(diskUsage))
+                logging.SendEmail(sender_email, admin.email, finalText, message)
 
             elif diskUsage > 80:
 
                 finalText = 'Current disk usage at "/" is %s percent. We are going to run below command to free up space, If disk usage is still high, manual action is required by the system administrator. \n\n rm -rf /usr/local/lsws/logs/*.' % (
                     str(diskUsage))
-                logging.SendEmail(admin.email, admin.email, finalText, message)
+                logging.SendEmail(sender_email, admin.email, finalText, message)
 
                 command = 'rm -rf /usr/local/lsws/logs/*'
                 import subprocess
@@ -214,6 +232,11 @@ class IncScheduler():
     @staticmethod
     def runGoogleDriveBackups(type):
 
+        ipFile = "/etc/cyberpanel/machineIP"
+        f = open(ipFile)
+        ipData = f.read()
+        ipAddress = ipData.split('\n', 1)[0]
+
         backupRunTime = time.strftime("%m.%d.%Y_%H-%M-%S")
         backupLogPath = "/usr/local/lscp/logs/local_backup_log." + backupRunTime
 
@@ -222,18 +245,20 @@ class IncScheduler():
                 if items.runTime == type:
                     gDriveData = json.loads(items.auth)
                     try:
-                        credentials = google.oauth2.credentials.Credentials(gDriveData['token'], gDriveData['refresh_token'],
-                                                                gDriveData['token_uri'], None, None, gDriveData['scopes'])
-
+                        credentials = google.oauth2.credentials.Credentials(gDriveData['token'],
+                                                                            gDriveData['refresh_token'],
+                                                                            gDriveData['token_uri'], None, None,
+                                                                            gDriveData['scopes'])
 
                         drive = build('drive', 'v3', credentials=credentials)
                         drive.files().list(pageSize=10, fields="files(id, name)").execute()
                     except BaseException as msg:
                         try:
-
+                            import requests
                             finalData = json.dumps({'refresh_token': gDriveData['refresh_token']})
-                            r = requests.post("https://cloud.cyberpanel.net/refreshToken", data=finalData
+                            r = requests.post("https://platform.cyberpersons.com/refreshToken", data=finalData
                                               )
+
                             gDriveData['token'] = json.loads(r.text)['access_token']
 
                             credentials = google.oauth2.credentials.Credentials(gDriveData['token'],
@@ -249,17 +274,14 @@ class IncScheduler():
                             items.auth = json.dumps(gDriveData)
                             items.save()
                         except BaseException as msg:
-                            GDriveJobLogs(owner=items, status=backupSchedule.ERROR, message='Connection to this account failed. Delete and re-setup this account. Error: %s' % (str(msg))).save()
+                            GDriveJobLogs(owner=items, status=backupSchedule.ERROR,
+                                          message='Connection to this account failed. Delete and re-setup this account. Error: %s' % (
+                                              str(msg))).save()
                             continue
 
                     try:
                         folderIDIP = gDriveData['folderIDIP']
                     except:
-
-                        ipFile = "/etc/cyberpanel/machineIP"
-                        f = open(ipFile)
-                        ipData = f.read()
-                        ipAddress = ipData.split('\n', 1)[0]
 
                         ## Create CyberPanel Folder
 
@@ -268,7 +290,7 @@ class IncScheduler():
                             'mimeType': 'application/vnd.google-apps.folder'
                         }
                         file = drive.files().create(body=file_metadata,
-                                                            fields='id').execute()
+                                                    fields='id').execute()
                         folderIDIP = file.get('id')
 
                         gDriveData['folderIDIP'] = folderIDIP
@@ -292,14 +314,26 @@ class IncScheduler():
                     GDriveJobLogs(owner=items, status=backupSchedule.INFO, message='Starting backup job..').save()
 
                     for website in items.gdrivesites_set.all():
+
+                        ### If  this website dont exists continue
+
                         try:
-                            GDriveJobLogs(owner=items, status=backupSchedule.INFO, message='Local backup creation started for %s..' % (website.domain)).save()
+                            Websites.objects.get(domain=website.domain)
+                        except:
+                            continue
+
+                        ##
+
+                        try:
+                            GDriveJobLogs(owner=items, status=backupSchedule.INFO,
+                                          message='Local backup creation started for %s..' % (website.domain)).save()
 
                             retValues = backupSchedule.createLocalBackup(website.domain, backupLogPath)
 
                             if retValues[0] == 0:
                                 GDriveJobLogs(owner=items, status=backupSchedule.ERROR,
-                                              message='[ERROR] Backup failed for %s, error: %s moving on..' % (website.domain, retValues[1])).save()
+                                              message='[ERROR] Backup failed for %s, error: %s moving on..' % (
+                                              website.domain, retValues[1])).save()
                                 continue
 
                             completeFileToSend = retValues[1] + ".tar.gz"
@@ -313,8 +347,9 @@ class IncScheduler():
                             try:
                                 drive.files().create(body=file_metadata, media_body=media, fields='id').execute()
                             except:
+                                import requests
                                 finalData = json.dumps({'refresh_token': gDriveData['refresh_token']})
-                                r = requests.post("https://cloud.cyberpanel.net/refreshToken", data=finalData
+                                r = requests.post("https://platform.cyberpersons.com/refreshToken", data=finalData
                                                   )
                                 gDriveData['token'] = json.loads(r.text)['access_token']
 
@@ -332,16 +367,99 @@ class IncScheduler():
                                 items.save()
 
                             GDriveJobLogs(owner=items, status=backupSchedule.INFO,
-                                          message='Backup for %s successfully sent to Google Drive.' % (website.domain)).save()
+                                          message='Backup for %s successfully sent to Google Drive.' % (
+                                              website.domain)).save()
 
                             os.remove(completeFileToSend)
                         except BaseException as msg:
                             GDriveJobLogs(owner=items, status=backupSchedule.ERROR,
                                           message='[Site] Site backup failed, Error message: %s.' % (str(msg))).save()
 
-
                     GDriveJobLogs(owner=items, status=backupSchedule.INFO,
                                   message='Job Completed').save()
+
+                    print("job com[leted")
+
+                    #logging.writeToFile('job completed')
+
+                    url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
+                    data = {
+                        "name": "backups-retention",
+                        "IP": ipAddress
+                    }
+
+                    import requests
+                    response = requests.post(url, data=json.dumps(data))
+                    Status = response.json()['status']
+
+                    if (Status == 1):
+                        try:
+
+                            page_token = None
+                            while True:
+                                response = drive.files().list(q="name='%s-%s'" % (items.name,ipAddress),
+                                    spaces='drive',
+                                                              fields='nextPageToken, files(id, name)',
+                                                              pageToken=page_token).execute()
+                                for file in response.get('files', []):
+                                    # Process change
+                                    #print('Fetch Main folder ID: %s (%s)' % (file.get('name'), file.get('id')))
+                                    #logging.writeToFile('Fetch Main folder ID: %s (%s)' % (file.get('name'), file.get('id')))
+                                    mainfolder_id= file.get('id')
+                                page_token = response.get('nextPageToken', None)
+                                if page_token is None:
+                                    break
+                            #print("new job started ")
+                            try:
+                                page_token = None
+                                while True:
+                                    response = drive.files().list(q="'%s' in parents"%(mainfolder_id),
+                                                                          spaces='drive',
+                                                                          fields='nextPageToken, files(id, name, createdTime)',
+                                                                          pageToken=page_token).execute()
+                                    for file in response.get('files', []):
+                                        # Process change
+                                        #print('Fetch all folders in main folder: %s (%s) time:-%s' % (file.get('name'), file.get('id'), file.get('createdTime')))
+                                        #logging.writeToFile('Fetch all folders in main folder: %s (%s) time:-%s' % (file.get('name'), file.get('id'),file.get('createdTime')))
+                                        ab = file.get('createdTime')[:10]
+                                        filename = file.get('name')
+                                        fileDeleteID = file.get('id')
+                                        timestamp = time.mktime(datetime.datetime.strptime(ab,"%Y-%m-%d").timetuple())
+                                        CUrrenttimestamp = time.time()
+                                        timerrtention = gDriveData['FileRetentiontime']
+                                        if(timerrtention == '1d'):
+                                            new = CUrrenttimestamp - float(86400)
+                                            if(new>=timestamp):
+                                                resp=drive.files().delete(fileId=fileDeleteID).execute()
+                                                logging.writeToFile('Delete file %s '%filename)
+                                        elif(timerrtention == '1w'):
+                                            new = CUrrenttimestamp - float(604800)
+                                            if (new >= timestamp):
+                                                resp = drive.files().delete(fileId=fileDeleteID).execute()
+                                                logging.writeToFile('Delete file %s '%filename)
+                                        elif (timerrtention == '1m'):
+                                            new = CUrrenttimestamp - float(2592000)
+                                            if (new >= timestamp):
+                                                resp = drive.files().delete(fileId=fileDeleteID).execute()
+                                                logging.writeToFile('Delete file %s '%filename)
+                                        elif (timerrtention == '6m'):
+                                            new = CUrrenttimestamp - float(15552000)
+                                            if (new >= timestamp):
+                                                resp = drive.files().delete(fileId=fileDeleteID).execute()
+                                                logging.writeToFile('Delete file %s '%filename)
+                                    page_token = response.get('nextPageToken', None)
+                                    if page_token is None:
+                                        break
+
+                               # logging.writeToFile('Createtime list - %s'%Createtime)
+
+                            except BaseException as msg:
+                                    print('An error occurred fetch child: %s' % msg)
+                                    logging.writeToFile('An error occurred fetch child: %s' % msg)
+
+                        except BaseException as msg:
+                            logging.writeToFile('job not completed [ERROR:]..%s'%msg)
+
             except BaseException as msg:
                 GDriveJobLogs(owner=items, status=backupSchedule.ERROR,
                               message='[Completely] Job failed, Error message: %s.' % (str(msg))).save()
@@ -363,7 +481,6 @@ class IncScheduler():
 
         ## {"frequency": "Daily", "allSites": "Selected Only"}
         ## {"frequency": "Daily"}
-
 
         for backupjob in NormalBackupJobs.objects.all():
 
@@ -403,10 +520,13 @@ class IncScheduler():
 
                     NormalBackupJobLogs.objects.filter(owner=backupjob).delete()
                     NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO,
-                                  message='Starting %s backup on %s..' % (type, time.strftime("%m.%d.%Y_%H-%M-%S"))).save()
+                                        message='Starting %s backup on %s..' % (
+                                        type, time.strftime("%m.%d.%Y_%H-%M-%S"))).save()
 
                     if oldJobContinue:
-                        NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO, message='Will continue old killed job starting from %s.' % (stuckDomain)).save()
+                        NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO,
+                                            message='Will continue old killed job starting from %s.' % (
+                                                stuckDomain)).save()
 
                     actualDomain = 0
                     try:
@@ -425,7 +545,6 @@ class IncScheduler():
                             domain = site.domain
                         else:
                             domain = site.domain.domain
-
 
                         ## Save currently backing domain in db, so that i can restart from here when prematurely killed
 
@@ -447,7 +566,7 @@ class IncScheduler():
                         if retValues[0] == 0:
                             NormalBackupJobLogs(owner=backupjob, status=backupSchedule.ERROR,
                                                 message='Backup failed for %s on %s.' % (
-                                                domain, time.strftime("%m.%d.%Y_%H-%M-%S"))).save()
+                                                    domain, time.strftime("%m.%d.%Y_%H-%M-%S"))).save()
 
                             SUBJECT = "Automatic backup failed for %s on %s." % (domain, currentTime)
                             adminEmailPath = '/home/cyberpanel/adminEmail'
@@ -458,7 +577,7 @@ class IncScheduler():
 From: %s
 To: %s
 Subject: %s
-    
+
 Automatic backup failed for %s on %s.
 """ % (sender, ", ".join(TO), SUBJECT, domain, currentTime)
 
@@ -483,7 +602,9 @@ Automatic backup failed for %s on %s.
                 import subprocess
                 import shlex
                 finalPath = '%s/%s' % (destinationConfig['path'].rstrip('/'), currentTime)
-                command = "ssh -o StrictHostKeyChecking=no -p " + destinationConfig['port'] + " -i /root/.ssh/cyberpanel " + destinationConfig['username'] + "@" + destinationConfig['ip'] + " mkdir -p %s" % (finalPath)
+                command = "ssh -o StrictHostKeyChecking=no -p " + destinationConfig[
+                    'port'] + " -i /root/.ssh/cyberpanel " + destinationConfig['username'] + "@" + destinationConfig[
+                              'ip'] + " mkdir -p %s" % (finalPath)
                 subprocess.call(shlex.split(command))
 
                 if jobConfig[IncScheduler.frequency] == type:
@@ -516,10 +637,12 @@ Automatic backup failed for %s on %s.
                     NormalBackupJobLogs.objects.filter(owner=backupjob).delete()
                     NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO,
                                         message='Starting %s backup on %s..' % (
-                                        type, time.strftime("%m.%d.%Y_%H-%M-%S"))).save()
+                                            type, time.strftime("%m.%d.%Y_%H-%M-%S"))).save()
 
                     if oldJobContinue:
-                        NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO, message='Will continue old killed job starting from %s.' % (stuckDomain)).save()
+                        NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO,
+                                            message='Will continue old killed job starting from %s.' % (
+                                                stuckDomain)).save()
 
                     actualDomain = 0
                     try:
@@ -539,6 +662,15 @@ Automatic backup failed for %s on %s.
                             domain = site.domain
                         else:
                             domain = site.domain.domain
+
+                        ### If  this website dont exists continue
+
+                        try:
+                            Websites.objects.get(domain=domain)
+                        except:
+                            continue
+
+                        ##
 
                         ## Save currently backing domain in db, so that i can restart from here when prematurely killed
 
@@ -571,7 +703,6 @@ Automatic backup failed for %s on %s.
 From: %s
 To: %s
 Subject: %s
-
 Automatic backup failed for %s on %s.
 """ % (sender, ", ".join(TO), SUBJECT, domain, currentTime)
 
@@ -579,7 +710,9 @@ Automatic backup failed for %s on %s.
                         else:
                             backupPath = retValues[1] + ".tar.gz"
 
-                            command = "scp -o StrictHostKeyChecking=no -P " + destinationConfig['port'] + " -i /root/.ssh/cyberpanel " + backupPath + " " + destinationConfig['username'] + "@" + destinationConfig['ip'] + ":%s" % (finalPath)
+                            command = "scp -o StrictHostKeyChecking=no -P " + destinationConfig[
+                                'port'] + " -i /root/.ssh/cyberpanel " + backupPath + " " + destinationConfig[
+                                          'username'] + "@" + destinationConfig['ip'] + ":%s" % (finalPath)
                             ProcessUtilities.executioner(command)
 
                             try:
@@ -614,7 +747,6 @@ Automatic backup failed for %s on %s.
     @staticmethod
     def forceRunAWSBackup(planName):
         try:
-
 
             plan = BackupPlan.objects.get(name=planName)
             bucketName = plan.bucket.strip('\n').strip(' ')
@@ -666,8 +798,8 @@ Automatic backup failed for %s on %s.
             else:
                 client = boto3.client(
                     's3',
-                    aws_access_key_id = aws_access_key_id,
-                    aws_secret_access_key = aws_secret_access_key,
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
                 )
 
             ##
@@ -690,7 +822,8 @@ Automatic backup failed for %s on %s.
                 extraArgs['port'] = '0'
                 extraArgs['ip'] = '0'
                 extraArgs['destinationDomain'] = 'None'
-                extraArgs['path'] = '/home/cyberpanel/backups/%s/backup-' % (items.domain) + items.domain + "-" + time.strftime("%m.%d.%Y_%H-%M-%S")
+                extraArgs['path'] = '/home/cyberpanel/backups/%s/backup-' % (
+                    items.domain) + items.domain + "-" + time.strftime("%m.%d.%Y_%H-%M-%S")
 
                 bu = backupUtilities(extraArgs)
                 result, fileName = bu.CloudBackups()
@@ -721,7 +854,6 @@ Automatic backup failed for %s on %s.
             BackupLogs(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
                        msg='Backup Process Finished.').save()
 
-
         except BaseException as msg:
             logging.writeToFile(str(msg) + ' [S3Backups.runBackupPlan]')
             plan = BackupPlan.objects.get(name=planName)
@@ -745,14 +877,28 @@ Automatic backup failed for %s on %s.
                 except:
                     config = {}
 
-                config['DiskUsage'], config['DiskUsagePercentage'] = virtualHostUtilities.getDiskUsage("/home/" + website.domain, website.package.diskSpace)
+                config['DiskUsage'], config['DiskUsagePercentage'] = virtualHostUtilities.getDiskUsage(
+                    "/home/" + website.domain, website.package.diskSpace)
 
                 if website.package.enforceDiskLimits:
                     if config['DiskUsagePercentage'] >= 100:
-                        command = 'chattr -R +i /home/%s' % (website.domain)
+                        command = 'chattr -R +i /home/%s/' % (website.domain)
                         ProcessUtilities.executioner(command)
+
+                        command = 'chattr -R -i /home/%s/logs/' % (website.domain)
+                        ProcessUtilities.executioner(command)
+
+                        command = 'chattr -R -i /home/%s/.trash/' % (website.domain)
+                        ProcessUtilities.executioner(command)
+
+                        command = 'chattr -R -i /home/%s/backup/' % (website.domain)
+                        ProcessUtilities.executioner(command)
+
+                        command = 'chattr -R -i /home/%s/incbackup/' % (website.domain)
+                        ProcessUtilities.executioner(command)
+
                     else:
-                        command = 'chattr -R -i /home/%s' % (website.domain)
+                        command = 'chattr -R -i /home/%s/' % (website.domain)
                         ProcessUtilities.executioner(command)
 
                 ## Calculate bw usage
@@ -788,13 +934,15 @@ Automatic backup failed for %s on %s.
                 ### Plugins, for plugins we will do minor updates only.
 
                 if config['pluginUpdates'] == 'Enabled':
-                    command = 'wp plugin update --all --minor --allow-root --path=/home/%s/public_html' % (config['domainName'])
+                    command = 'wp plugin update --all --minor --allow-root --path=/home/%s/public_html' % (
+                    config['domainName'])
                     ProcessUtilities.executioner(command)
 
                 ### Themes, for plugins we will do minor updates only.
 
                 if config['themeUpdates'] == 'Enabled':
-                    command = 'wp theme update --all --minor --allow-root --path=/home/%s/public_html' % (config['domainName'])
+                    command = 'wp theme update --all --minor --allow-root --path=/home/%s/public_html' % (
+                    config['domainName'])
                     ProcessUtilities.executioner(command)
 
             except BaseException as msg:
@@ -802,7 +950,6 @@ Automatic backup failed for %s on %s.
 
 
 def main():
-
     parser = argparse.ArgumentParser(description='CyberPanel Installer')
     parser.add_argument('function', help='Specific a function to call!')
     parser.add_argument('--planName', help='Plan name for AWS!')
@@ -814,6 +961,14 @@ def main():
 
     IncScheduler.CalculateAndUpdateDiskUsage()
     IncScheduler.WPUpdates()
+
+    ### Run incremental backups in sep thread
+
+    ib = IncScheduler('startBackup', {'freq': args.function})
+    ib.start()
+
+    ###
+
     IncScheduler.startBackup(args.function)
     IncScheduler.runGoogleDriveBackups(args.function)
     IncScheduler.git(args.function)

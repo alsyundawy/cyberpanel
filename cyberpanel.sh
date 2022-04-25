@@ -253,8 +253,8 @@ else
 fi
 
 
-if ! uname -m | grep -q 64 ; then
-  echo -e "x64 system is required...\n"
+if ! uname -m | grep -q x86_64 ; then
+  echo -e "x86_64 system is required...\n"
   exit
 fi
 
@@ -264,10 +264,10 @@ elif grep -q "AlmaLinux-8" /etc/os-release ; then
   Server_OS="AlmaLinux"
 elif grep -q -E "CloudLinux 7|CloudLinux 8" /etc/os-release ; then
   Server_OS="CloudLinux"
-elif grep -q -E "Ubuntu 18.04|Ubuntu 20.04|Ubuntu 20.10" /etc/os-release ; then
-  Server_OS="Ubuntu"
 elif grep -q -E "Rocky Linux" /etc/os-release ; then
   Server_OS="RockyLinux"
+elif grep -q -E "Ubuntu 18.04|Ubuntu 20.04|Ubuntu 20.10" /etc/os-release ; then
+  Server_OS="Ubuntu"
 else
   echo -e "Unable to detect your system..."
   echo -e "\nCyberPanel is supported on Ubuntu 18.04 x86_64, Ubuntu 20.04 x86_64, Ubuntu 20.10 x86_64, CentOS 7.x, CentOS 8.x, AlmaLinux 8.x, RockyLinux 8.x, CloudLinux 7.x, CloudLinux 8.x...\n"
@@ -790,7 +790,7 @@ fi
 Interactive_Mode_License_Input() {
 Server_Edition="Enterprise"
 echo -e "\nPlease note that your server has \e[31m$Total_RAM MB\e[39m RAM"
-echo -e "If you are using \e[31mFree Start\e[39m license, It will not start due to \e[31m2GB RAM limit\e[39m.\n"
+echo -e "REMINDER: The \e[31mFree Start\e[39m license requires \e[31m2GB or less\e[39m of RAM and the \e[31mSite Owner\e[39m and \e[31mWeb Host Lite\e[39m licenses require \e[31m8GB or less\e[39m.\n"
 echo -e "If you do not have any license, you can also use trial license (if server has not used trial license before), type \e[31mTRIAL\e[39m\n"
 
 printf "%s" "Please input your serial number for LiteSpeed WebServer Enterprise: "
@@ -842,15 +842,22 @@ if [[ $Server_OS = "CentOS" ]] ; then
     yum install -y https://cyberpanel.sh/dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
       Check_Return "yum repo" "no_exit"
 
-    cat <<EOF >/etc/yum.repos.d/CentOS-PowerTools-CyberPanel.repo
-[powertools-for-cyberpanel]
-name=CentOS Linux \$releasever - PowerTools
-mirrorlist=http://mirrorlist.centos.org/?release=\$releasever&arch=\$basearch&repo=PowerTools&infra=\$infra
-baseurl=http://mirror.centos.org/\$contentdir/\$releasever/PowerTools/\$basearch/os/
-gpgcheck=1
-enabled=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial
-EOF
+    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* > /dev/null 2>&1
+    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* > /dev/null 2>&1
+    # ref: https://stackoverflow.com/questions/70926799/centos-through-vm-no-urls-in-mirrorlist
+
+    dnf config-manager --set-enabled PowerTools > /dev/null 2>&1
+    dnf config-manager --set-enabled powertools > /dev/null 2>&1
+  
+#    cat <<EOF >/etc/yum.repos.d/CentOS-PowerTools-CyberPanel.repo
+#[powertools-for-cyberpanel]
+#name=CentOS Linux \$releasever - PowerTools
+#mirrorlist=http://mirrorlist.centos.org/?release=\$releasever&arch=\$basearch&repo=PowerTools&infra=\$infra
+#baseurl=http://mirror.centos.org/\$contentdir/\$releasever/PowerTools/\$basearch/os/
+#gpgcheck=1
+#enabled=1
+#gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial
+#EOF
   fi
 
   if [[ "$Server_OS_Version" = "7" ]]; then
@@ -864,11 +871,11 @@ EOF
       Check_Return "yum repo" "no_exit"
 
     cat <<EOF >/etc/yum.repos.d/MariaDB.repo
-# MariaDB 10.5 CentOS repository list - created 2020-09-08 14:54 UTC
+# MariaDB 10.4 CentOS repository list - created 2021-08-06 02:01 UTC
 # http://downloads.mariadb.org/mariadb/repositories/
 [mariadb]
 name = MariaDB
-baseurl = http://yum.mariadb.org/10.5/centos7-amd64
+baseurl = http://yum.mariadb.org/10.4/centos7-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1
 EOF
@@ -990,6 +997,7 @@ else
 	if [[ "$Server_Provider" = "Alibaba Cloud" ]] ; then
     apt install -y --allow-downgrades libgnutls30=3.6.13-2ubuntu1.3
   fi
+
   DEBIAN_FRONTEND=noninteracitve apt install -y dnsutils net-tools htop telnet libcurl4-gnutls-dev libgnutls28-dev libgcrypt20-dev libattr1 libattr1-dev liblzma-dev libgpgme-dev libmariadbclient-dev libcurl4-gnutls-dev libssl-dev nghttp2 libnghttp2-dev idn2 libidn2-dev libidn2-0-dev librtmp-dev libpsl-dev nettle-dev libgnutls28-dev libldap2-dev libgssapi-krb5-2 libk5crypto3 libkrb5-dev libcomerr2 libldap2-dev virtualenv git socat vim unzip zip
     Check_Return
 
@@ -1111,9 +1119,16 @@ if ! grep -q "pid_max" /etc/rc.local 2>/dev/null ; then
     echo 1 > /sys/kernel/mm/ksm/run" >>/etc/rc.d/rc.local
     chmod +x /etc/rc.d/rc.local
   else
+    if [[ -f /etc/rc.local ]] ; then 
+      echo -e "#!/bin/bash\n$(cat /etc/rc.local)" > /etc/rc.local
+    else 
+      echo "#!/bin/bash" > /etc/rc.local
+    fi 
     echo "echo 1000000 > /proc/sys/kernel/pid_max
     echo 1 > /sys/kernel/mm/ksm/run" >>/etc/rc.local
     chmod +x /etc/rc.local
+    systemctl enable rc-local  >/dev/null 2>&1
+    systemctl start rc-local  >/dev/null 2>&1
   fi
 	if grep -q "nf_conntrack_max" /etc/sysctl.conf ; then
     sysctl -w net.netfilter.nf_conntrack_max=2097152 > /dev/null
@@ -1620,13 +1635,13 @@ echo "                Panel password: *****                              "
 else
 echo "                Panel password: $Admin_Pass                        "
 fi
-echo "                Visit: https://$Server_IP:7080                     "
-echo "                WebAdmin console username: admin                   "
-echo "                WebAdmin console password: $Webadmin_Pass          "
-echo "                                                                   "
-echo "                Visit: https://$Server_IP:8090/rainloop/?admin     "
-echo "                Rainloop Admin username: admin                     "
-echo "                Rainloop Admin password: $RainloopAdminPass        "
+#echo "                Visit: https://$Server_IP:7080                     "
+#echo "                WebAdmin console username: admin                   "
+#echo "                WebAdmin console password: $Webadmin_Pass          "
+#echo "                                                                   "
+#echo "                Visit: https://$Server_IP:8090/rainloop/?admin     "
+#echo "                Rainloop Admin username: admin                     "
+#echo "                Rainloop Admin password: $RainloopAdminPass        "
 echo "                                                                   "
 echo -e "             Run \e[31mcyberpanel help\e[39m to get FAQ info"
 echo -e "             Run \e[31mcyberpanel upgrade\e[39m to upgrade it to latest version."
