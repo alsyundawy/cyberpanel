@@ -15,7 +15,7 @@ from stat import *
 import stat
 
 VERSION = '2.3'
-BUILD = 2
+BUILD = 3
 
 char_set = {'small': 'abcdefghijklmnopqrstuvwxyz', 'nums': '0123456789', 'big': 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'}
 
@@ -218,12 +218,15 @@ class preFlightsChecks:
         return False
 
     @staticmethod
-    def call(command, distro, bracket, message, log=0, do_exit=0, code=os.EX_OK):
+    def call(command, distro, bracket, message, log=0, do_exit=0, code=os.EX_OK, shell=False):
         finalMessage = 'Running: %s' % (message)
         preFlightsChecks.stdOut(finalMessage, log)
         count = 0
         while True:
-            res = subprocess.call(shlex.split(command))
+            if shell == False:
+                res = subprocess.call(shlex.split(command))
+            else:
+                res = subprocess.call(command, shell=True)
 
             if preFlightsChecks.resFailed(distro, res):
                 count = count + 1
@@ -368,9 +371,9 @@ class preFlightsChecks:
         if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
             command = "yum -y install psmisc"
         else:
-            command = "apt-get -y install psmisc"
+            command = "DEBIAN_FRONTEND=noninteractive apt-get -y install psmisc"
 
-        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
     def download_install_CyberPanel(self, mysqlPassword, mysql):
         ##
@@ -654,6 +657,12 @@ password="%s"
 
             command = 'chmod 640 /etc/pdns/pdns.conf'
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+        else:
+            command = 'chown root:pdns /etc/powerdns/pdns.conf'
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            command = 'chmod 640 /etc/powerdns/pdns.conf'
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
         command = 'chmod 640 /usr/local/lscp/cyberpanel/logs/access.log'
         preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
@@ -700,9 +709,9 @@ password="%s"
             if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
                 command = 'yum -y install unzip'
             else:
-                command = 'apt-get -y install unzip'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install unzip'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
         except BaseException as msg:
             logging.InstallLog.writeToFile('[ERROR] ' + str(msg) + " [install_unzip]")
 
@@ -712,9 +721,9 @@ password="%s"
             if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
                 command = 'yum -y install zip'
             else:
-                command = 'apt-get -y install zip'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install zip'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
         except BaseException as msg:
             logging.InstallLog.writeToFile('[ERROR] ' + str(msg) + " [install_zip]")
 
@@ -810,8 +819,8 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
                 command = 'yum remove postfix -y'
                 preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
             elif self.distro == ubuntu:
-                command = 'apt-get -y remove postfix'
-                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y remove postfix'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
             self.stdOut("Install dovecot - do the install")
 
@@ -829,8 +838,8 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
                 preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
             else:
-                command = 'apt-get -y install debconf-utils'
-                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install debconf-utils'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
                 file_name = self.cwd + '/pf.unattend.text'
                 pf = open(file_name, 'w')
                 pf.write('postfix postfix/mailname string ' + str(socket.getfqdn() + '\n'))
@@ -839,10 +848,10 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
                 command = 'debconf-set-selections ' + file_name
                 preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-                command = 'apt-get -y install postfix postfix-mysql'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install postfix postfix-mysql'
                 # os.remove(file_name)
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
             ##
 
@@ -853,9 +862,9 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             elif self.distro == openeuler:
                 command = 'dnf install dovecot -y'
             else:
-                command = 'apt-get -y install dovecot-mysql dovecot-imapd dovecot-pop3d'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install dovecot-mysql dovecot-imapd dovecot-pop3d'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
         except BaseException as msg:
             logging.InstallLog.writeToFile('[ERROR] ' + str(msg) + " [install_postfix_dovecot]")
@@ -1353,11 +1362,27 @@ autocreate_system_folders = On
             preFlightsChecks.stdOut("[ERROR] Expected access to ufw not available, do not need to remove it", 1)
             return True
         try:
-            preFlightsChecks.call('apt-get -y remove ufw', self.distro, '[remove_ufw]', 'Remove ufw firewall ' +
-                                  '(using firewalld)', 1, 0, os.EX_OSERR)
+            preFlightsChecks.call('DEBIAN_FRONTEND=noninteractive apt-get -y remove ufw', self.distro, '[remove_ufw]', 'Remove ufw firewall ' +
+                                  '(using firewalld)', 1, 0, os.EX_OSERR, True)
         except:
             pass
         return True
+
+
+    def findSSHPort(self):
+        try:
+            sshData = subprocess.check_output(shlex.split('cat /etc/ssh/sshd_config')).decode("utf-8").split('\n')
+
+            for items in sshData:
+                if items.find('Port') > -1:
+                    if items[0] == 0:
+                        pass
+                    else:
+                        return items.split(' ')[1]
+
+            return '22'
+        except BaseException as msg:
+            return '22'
 
     def installFirewalld(self):
 
@@ -1368,11 +1393,11 @@ autocreate_system_folders = On
             preFlightsChecks.stdOut("Enabling Firewall!")
 
             if self.distro == ubuntu:
-                command = 'apt-get -y install firewalld'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install firewalld'
             else:
                 command = 'yum -y install firewalld'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
             ######
             if self.distro == centos:
@@ -1408,6 +1433,15 @@ autocreate_system_folders = On
             FirewallUtilities.addRule("udp", "443")
             FirewallUtilities.addRule("tcp", "40110-40210")
 
+            try:
+                SSHPort = self.findSSHPort()
+                if SSHPort != '22':
+                    FirewallUtilities.addRule('tcp', SSHPort)
+            except BaseException as msg:
+                logging.InstallLog.writeToFile(f'[Error Custom SSH port] {str(msg)}')
+                preFlightsChecks.stdOut(f'[Error Custom SSH port] {str(msg)}')
+
+
             logging.InstallLog.writeToFile("FirewallD installed and configured!")
             preFlightsChecks.stdOut("FirewallD installed and configured!")
 
@@ -1430,19 +1464,19 @@ autocreate_system_folders = On
             os.chdir(self.cwd)
 
             if self.distro == ubuntu:
-                command = "apt-get -y install gcc g++ make autoconf rcs"
+                command = "DEBIAN_FRONTEND=noninteractive apt-get -y install gcc g++ make autoconf rcs"
             else:
                 command = 'yum -y install gcc gcc-c++ make autoconf glibc'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
             if self.distro == ubuntu:
-                command = "apt-get -y install libpcre3 libpcre3-dev openssl libexpat1 libexpat1-dev libgeoip-dev" \
+                command = "DEBIAN_FRONTEND=noninteractive apt-get -y install libpcre3 libpcre3-dev openssl libexpat1 libexpat1-dev libgeoip-dev" \
                           " zlib1g zlib1g-dev libudns-dev whichman curl"
             else:
                 command = 'yum -y install pcre-devel openssl-devel expat-devel geoip-devel zlib-devel udns-devel'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
             command = 'tar zxf lscp.tar.gz -C /usr/local/'
             preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
@@ -1451,13 +1485,20 @@ autocreate_system_folders = On
 
             lscpdPath = '/usr/local/lscp/bin/lscpd'
 
-            command = 'cp -f /usr/local/CyberCP/lscpd-0.3.1 /usr/local/lscp/bin/lscpd-0.3.1'
+            lscpdSelection = 'lscpd-0.3.1'
+            if os.path.exists('/etc/lsb-release'):
+                result = open('/etc/lsb-release', 'r').read()
+                if result.find('22.04') > -1:
+                    lscpdSelection = 'lscpd.0.4.0'
+
+
+            command = f'cp -f /usr/local/CyberCP/{lscpdSelection} /usr/local/lscp/bin/{lscpdSelection}'
             preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
             command = 'rm -f /usr/local/lscp/bin/lscpd'
             preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
-            command = 'mv /usr/local/lscp/bin/lscpd-0.3.1 /usr/local/lscp/bin/lscpd'
+            command = f'mv /usr/local/lscp/bin/{lscpdSelection} /usr/local/lscp/bin/lscpd'
             preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
             command = 'chmod 755 %s' % (lscpdPath)
@@ -1705,9 +1746,9 @@ autocreate_system_folders = On
             if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
                 command = 'yum install cronie -y'
             else:
-                command = 'apt-get -y install cron'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install cron'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
             if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
                 command = 'systemctl enable crond'
@@ -1809,9 +1850,9 @@ autocreate_system_folders = On
             if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
                 command = 'yum -y install rsync'
             else:
-                command = 'apt-get -y install rsync'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install rsync'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
         except BaseException as msg:
             logging.InstallLog.writeToFile('[ERROR] ' + str(msg) + " [install_rsync]")
@@ -1867,9 +1908,9 @@ autocreate_system_folders = On
             elif self.distro == cent8 or self.distro == openeuler:
                 command = 'dnf install opendkim -y'
             else:
-                command = 'apt-get -y install opendkim'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install opendkim'
 
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
             if self.distro == cent8 or self.distro == openeuler:
                 command = 'dnf install opendkim-tools -y'
@@ -1972,8 +2013,8 @@ milter_default_action = accept
                     if os.access('/usr/local/lsws/lsphp72/bin/php7.2', os.R_OK):
                         os.symlink('/usr/local/lsws/lsphp72/bin/php7.2', '/usr/local/lsws/lsphp72/bin/php')
 
-            command = "cp /usr/local/lsws/lsphp71/bin/php /usr/bin/"
-            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            #command = "cp /usr/local/lsws/lsphp71/bin/php /usr/bin/"
+            #preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
             os.chdir(self.cwd)
 
@@ -1989,7 +2030,7 @@ milter_default_action = accept
 
     @staticmethod
     def installOne(package):
-        res = subprocess.call(shlex.split('apt-get -y install ' + package))
+        res = subprocess.call(shlex.split('DEBIAN_FRONTEND=noninteractive apt-get -y install ' + package))
         if res != 0:
             preFlightsChecks.stdOut("Error #" + str(res) + ' installing:' + package + '.  This may not be an issue ' \
                                                                                       'but may affect installation of something later',
@@ -2122,11 +2163,11 @@ milter_default_action = accept
                 preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
             else:
-                command = 'apt-get update -y'
-                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get update -y'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
 
-                command = 'apt-get install restic -y'
-                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get install restic -y'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
                 
                 command = 'restic self-update'
                 preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)

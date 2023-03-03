@@ -17,7 +17,7 @@ import random
 import string
 
 VERSION = '2.3'
-BUILD = 2
+BUILD = 3
 
 CENTOS7 = 0
 CENTOS8 = 1
@@ -27,6 +27,7 @@ CloudLinux7 = 4
 CloudLinux8 = 5
 openEuler20 = 6
 openEuler22 = 7
+Ubuntu22 = 8
 
 
 class Upgrade:
@@ -37,7 +38,7 @@ class Upgrade:
     UbuntuPath = '/etc/lsb-release'
     openEulerPath = '/etc/openEuler-release'
     FromCloud = 0
-    SnappyVersion = '2.17.0'
+    SnappyVersion = '2.18.6'
 
     AdminACL = '{"adminStatus":1, "versionManagement": 1, "createNewUser": 1, "listUsers": 1, "deleteUser":1 , "resellerCenter": 1, ' \
                '"changeUserACL": 1, "createWebsite": 1, "modifyWebsite": 1, "suspendWebsite": 1, "deleteWebsite": 1, ' \
@@ -98,6 +99,8 @@ class Upgrade:
 
             if result.find('20.04') > -1:
                 return Ubuntu20
+            elif result.find('22.04') > -1:
+                return Ubuntu22
             else:
                 return Ubuntu18
 
@@ -115,12 +118,15 @@ class Upgrade:
                 os._exit(0)
 
     @staticmethod
-    def executioner(command, component, do_exit=0):
+    def executioner(command, component, do_exit=0, shell=False):
         try:
             FNULL = open(os.devnull, 'w')
             count = 0
             while True:
-                res = subprocess.call(shlex.split(command), stderr=subprocess.STDOUT)
+                if shell == False:
+                    res = subprocess.call(shlex.split(command), stderr=subprocess.STDOUT)
+                else:
+                    res = subprocess.call(command, stderr=subprocess.STDOUT, shell=True)
                 if res != 0:
                     count = count + 1
                     Upgrade.stdOut(component + ' failed, trying again, try number: ' + str(count), 0)
@@ -1986,13 +1992,21 @@ autocreate_system_folders = On
             if os.path.exists(lscpdPath):
                 os.remove(lscpdPath)
 
-            command = 'cp -f /usr/local/CyberCP/lscpd-0.3.1 /usr/local/lscp/bin/lscpd-0.3.1'
+
+
+            lscpdSelection = 'lscpd-0.3.1'
+            if os.path.exists(Upgrade.UbuntuPath):
+                result = open(Upgrade.UbuntuPath, 'r').read()
+                if result.find('22.04') > -1:
+                    lscpdSelection = 'lscpd.0.4.0'
+
+            command = f'cp -f /usr/local/CyberCP/{lscpdSelection} /usr/local/lscp/bin/{lscpdSelection}'
             Upgrade.executioner(command, command, 0)
 
             command = 'rm -f /usr/local/lscp/bin/lscpd'
             Upgrade.executioner(command, command, 0)
 
-            command = 'mv /usr/local/lscp/bin/lscpd-0.3.1 /usr/local/lscp/bin/lscpd'
+            command = f'mv /usr/local/lscp/bin/{lscpdSelection} /usr/local/lscp/bin/lscpd'
             Upgrade.executioner(command, command, 0)
 
             command = f'chmod 755 {lscpdPath}'
@@ -2212,6 +2226,12 @@ echo $oConfig->Save() ? 'Done' : 'Error';
 
                 command = 'chmod 640 /etc/pdns/pdns.conf'
                 Upgrade.executioner(command, 0)
+            else:
+                command = 'chown root:pdns /etc/powerdns/pdns.conf'
+                Upgrade.executioner(command, 0)
+
+                command = 'chmod 640 /etc/powerdns/pdns.conf'
+                Upgrade.executioner(command, 0)
 
             command = 'chmod 640 /usr/local/lscp/cyberpanel/logs/access.log'
             Upgrade.executioner(command, 0)
@@ -2319,9 +2339,9 @@ echo $oConfig->Save() ? 'Done' : 'Error';
         CentOSPath = '/etc/redhat-release'
         openEulerPath = '/etc/openEuler-release'
 
-        if not os.path.exists(CentOSPath) or not os.path.exists(openEulerPath):
-            command = 'cp /usr/local/lsws/lsphp71/bin/php /usr/bin/'
-            Upgrade.executioner(command, 'Set default PHP 7.0, 0')
+        #if not os.path.exists(CentOSPath) or not os.path.exists(openEulerPath):
+            #command = 'cp /usr/local/lsws/lsphp71/bin/php /usr/bin/'
+            #Upgrade.executioner(command, 'Set default PHP 7.0, 0')
 
     @staticmethod
     def someDirectories():
@@ -2419,7 +2439,7 @@ echo $oConfig->Save() ? 'Done' : 'Error';
 
                 command = 'systemctl restart postfix'
                 Upgrade.executioner(command, 0)
-            elif Upgrade.FindOperatingSytem() == Ubuntu20:
+            elif Upgrade.FindOperatingSytem() == Ubuntu20 or Upgrade.FindOperatingSytem() == Ubuntu22:
 
                 debPath = '/etc/apt/sources.list.d/dovecot.list'
                 # writeToFile = open(debPath, 'w')
@@ -2561,16 +2581,16 @@ vmail
 
         # Remove invalid crons from /etc/crontab Reference: https://github.com/usmannasir/cyberpanel/issues/216
         command = """sed -i '/CyberCP/d' /etc/crontab"""
-        subprocess.call(command, shell=True)
+        Upgrade.executioner(command, command, 0, True)
 
         if os.path.exists('/usr/local/lsws/conf/httpd.conf'):
             # Setup /usr/local/lsws/conf/httpd.conf to use new Logformat standard for better stats and accesslogs
             command = """sed -i "s|^LogFormat.*|LogFormat '%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"' combined|g" /usr/local/lsws/conf/httpd.conf"""
-            subprocess.call(command, shell=True)
+            Upgrade.executioner(command, command, 0, True)
 
         # Fix all existing vhost confs to use new Logformat standard for better stats and accesslogs
         command = """find /usr/local/lsws/conf/vhosts/ -type f -name 'vhost.conf' -exec sed -i "s/.*CustomLog.*/    LogFormat '%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"' combined\n&/g" {} \;"""
-        subprocess.call(command, shell=True)
+        Upgrade.executioner(command, command, 0, True)
 
         # Install any Cyberpanel missing crons to root crontab so its visible to users via crontab -l as root user
 
@@ -2814,7 +2834,7 @@ vmail
         except:
             pass
 
-        command = 'cp /usr/local/lsws/lsphp73/bin/lsphp %s' % (phpPath)
+        command = 'cp /usr/local/lsws/lsphp74/bin/lsphp %s' % (phpPath)
         Upgrade.executioner(command, 0)
 
         try:
@@ -2831,23 +2851,25 @@ vmail
         Upgrade.installCLScripts()
         Upgrade.runSomeImportantBash()
 
-        ## Move static files
+        # ## Move static files
+        #
+        # imunifyPath = '/usr/local/CyberCP/public/imunify'
+        #
+        # if os.path.exists(imunifyPath):
+        #     command = "yum reinstall imunify360-firewall-generic -y"
+        #     Upgrade.executioner(command, command, 1)
+        #
+        # imunifyAVPath = '/etc/sysconfig/imunify360/integration.conf'
+        #
+        # if os.path.exists(imunifyAVPath):
+        #     execPath = "/usr/local/CyberCP/bin/python /usr/local/CyberCP/CLManager/CageFS.py"
+        #     command = execPath + " --function submitinstallImunifyAV"
+        #     Upgrade.executioner(command, command, 1)
+        #
+        #     command = 'chmod +x /usr/local/CyberCP/public/imunifyav/bin/execute.py'
+        #     Upgrade.executioner(command, command, 1)
 
-        imunifyPath = '/usr/local/CyberCP/public/imunify'
 
-        if os.path.exists(imunifyPath):
-            command = "yum reinstall imunify360-firewall-generic -y"
-            Upgrade.executioner(command, command, 1)
-
-        imunifyAVPath = '/etc/sysconfig/imunify360/integration.conf'
-
-        if os.path.exists(imunifyAVPath):
-            execPath = "/usr/local/CyberCP/bin/python /usr/local/CyberCP/CLManager/CageFS.py"
-            command = execPath + " --function submitinstallImunifyAV"
-            Upgrade.executioner(command, command, 1)
-
-            command = 'chmod +x /usr/local/CyberCP/public/imunifyav/bin/execute.py'
-            Upgrade.executioner(command, command, 1)
 
 
         Upgrade.stdOut("Upgrade Completed.")
