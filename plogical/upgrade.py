@@ -17,7 +17,7 @@ import random
 import string
 
 VERSION = '2.3'
-BUILD = 3
+BUILD = 4
 
 CENTOS7 = 0
 CENTOS8 = 1
@@ -38,7 +38,7 @@ class Upgrade:
     UbuntuPath = '/etc/lsb-release'
     openEulerPath = '/etc/openEuler-release'
     FromCloud = 0
-    SnappyVersion = '2.18.6'
+    SnappyVersion = '2.25.3'
 
     AdminACL = '{"adminStatus":1, "versionManagement": 1, "createNewUser": 1, "listUsers": 1, "deleteUser":1 , "resellerCenter": 1, ' \
                '"changeUserACL": 1, "createWebsite": 1, "modifyWebsite": 1, "suspendWebsite": 1, "deleteWebsite": 1, ' \
@@ -509,30 +509,132 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             command = "mkdir -p /usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/configs/"
             Upgrade.executioner(command, 'mkdir snappymail configs', 0)
 
-            labsPath = '/usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/configs/application.ini'
+            command = f'wget -O /usr/local/CyberCP/snappymail_cyberpanel.php  https://raw.githubusercontent.com/the-djmaze/snappymail/master/integrations/cyberpanel/install.php'
+            Upgrade.executioner(command, 'verify certificate', 0)
 
-            labsData = """[labs]
-imap_folder_list_limit = 0
-autocreate_system_folders = On
-"""
+            command = f'/usr/local/lsws/lsphp74/bin/php /usr/local/CyberCP/snappymail_cyberpanel.php'
+            Upgrade.executioner(command, 'verify certificate', 0)
 
-            writeToFile = open(labsPath, 'a')
-            writeToFile.write(labsData)
-            writeToFile.close()
+            #labsPath = '/usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/configs/application.ini'
+
+#             labsData = """[labs]
+# imap_folder_list_limit = 0
+# autocreate_system_folders = On
+# """
+#
+#             writeToFile = open(labsPath, 'a')
+#             writeToFile.write(labsData)
+#             writeToFile.close()
 
             includeFileOldPath = '/usr/local/CyberCP/public/snappymail/_include.php'
             includeFileNewPath = '/usr/local/CyberCP/public/snappymail/include.php'
 
-            if os.path.exists(includeFileOldPath):
-                writeToFile = open(includeFileOldPath, 'a')
-                writeToFile.write("\ndefine('APP_DATA_FOLDER_PATH', '/usr/local/lscp/cyberpanel/rainloop/data/');\n")
-                writeToFile.close()
+            # if os.path.exists(includeFileOldPath):
+            #     writeToFile = open(includeFileOldPath, 'a')
+            #     writeToFile.write("\ndefine('APP_DATA_FOLDER_PATH', '/usr/local/lscp/cyberpanel/rainloop/data/');\n")
+            #     writeToFile.close()
 
-            command = 'mv %s %s' % (includeFileOldPath, includeFileNewPath)
-            Upgrade.executioner(command, 'mkdir snappymail configs', 0)
+            # command = 'mv %s %s' % (includeFileOldPath, includeFileNewPath)
+            # Upgrade.executioner(command, 'mkdir snappymail configs', 0)
 
-            command = "sed -i 's|autocreate_system_folders = Off|autocreate_system_folders = On|g' %s" % (labsPath)
-            Upgrade.executioner(command, 'mkdir snappymail configs', 0)
+            ## take care of auto create folders
+
+            ## Disable local cert verification
+
+            #command = "sed -i 's|verify_certificate = On|verify_certificate = Off|g' %s" % (labsPath)
+            #Upgrade.executioner(command, 'verify certificate', 0)
+
+
+            # labsData = open(labsPath, 'r').read()
+            # labsDataLines = open(labsPath, 'r').readlines()
+            #
+            # if labsData.find('autocreate_system_folders') > -1:
+            #     command = "sed -i 's|autocreate_system_folders = Off|autocreate_system_folders = On|g' %s" % (labsPath)
+            #     Upgrade.executioner(command, 'mkdir snappymail configs', 0)
+            # else:
+            #     WriteToFile = open(labsPath, 'w')
+            #     for lines in labsDataLines:
+            #         if lines.find('[labs]') > -1:
+            #             WriteToFile.write(lines)
+            #             WriteToFile.write(f'autocreate_system_folders = On\n')
+            #         else:
+            #             WriteToFile.write(lines)
+            #     WriteToFile.close()
+
+            ##take care of imap_folder_list_limit
+
+            # labsDataLines = open(labsPath, 'r').readlines()
+            #
+            # if labsData.find('imap_folder_list_limit') == -1:
+            #     WriteToFile = open(labsPath, 'w')
+            #     for lines in labsDataLines:
+            #         if lines.find('[labs]') > -1:
+            #             WriteToFile.write(lines)
+            #             WriteToFile.write(f'imap_folder_list_limit = 0\n')
+            #         else:
+            #             WriteToFile.write(lines)
+            #     WriteToFile.close()
+
+            ### now download and install actual plugin
+
+#             command = f'mkdir /usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/plugins/mailbox-detect'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+#
+#             command = f'chmod 700 /usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/plugins/mailbox-detect'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+#
+#             command = f'chown lscpd:lscpd /usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/plugins/mailbox-detect'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+#
+#             command = f'wget -O /usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/plugins/mailbox-detect/index.php https://raw.githubusercontent.com/the-djmaze/snappymail/master/plugins/mailbox-detect/index.php'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+#
+#             command = f'chmod 644 /usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/plugins/mailbox-detect/index.php'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+#
+#             command = f'chown lscpd:lscpd /usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/plugins/mailbox-detect/index.php'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+#
+#             ### Enable plugins and enable mailbox creation plugin
+#
+#             labsDataLines = open(labsPath, 'r').readlines()
+#             PluginsActivator = 0
+#             WriteToFile = open(labsPath, 'w')
+#
+#
+#             for lines in labsDataLines:
+#                 if lines.find('[plugins]') > -1:
+#                     PluginsActivator = 1
+#                     WriteToFile.write(lines)
+#                 elif PluginsActivator and lines.find('enable = ') > -1:
+#                     WriteToFile.write(f'enable = On\n')
+#                 elif PluginsActivator and lines.find('enabled_list = ') > -1:
+#                     WriteToFile.write(f'enabled_list = "mailbox-detect"\n')
+#                 elif PluginsActivator == 1 and lines.find('[defaults]') > -1:
+#                     PluginsActivator = 0
+#                     WriteToFile.write(lines)
+#                 else:
+#                     WriteToFile.write(lines)
+#             WriteToFile.close()
+#
+#             ## enable auto create in the enabled plugin
+#             PluginsFilePath = '/usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/configs/plugin-mailbox-detect.json'
+#
+#             WriteToFile = open(PluginsFilePath, 'w')
+#             WriteToFile.write("""{
+#     "plugin": {
+#         "autocreate_system_folders": true
+#     }
+# }
+# """)
+#             WriteToFile.close()
+#
+#             command = f'chown lscpd:lscpd {PluginsFilePath}'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+#
+#             command = f'chmod 600 {PluginsFilePath}'
+#             Upgrade.executioner(command, 'verify certificate', 0)
+
 
             os.chdir(cwd)
 
@@ -976,6 +1078,28 @@ autocreate_system_folders = On
                 cursor.execute(query)
             except:
                 pass
+
+
+            try:
+                cursor.execute("ALTER TABLE websiteFunctions_websites ADD COLUMN BackupLock INT DEFAULT 0;")
+            except:
+                pass
+
+
+            ### update ftp issue for ubuntu 22
+
+            if Upgrade.FindOperatingSytem() == Ubuntu22:
+
+                try:
+                    cursor.execute('ALTER TABLE `users` CHANGE `Password` `Password` VARCHAR(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL; ')
+                except:
+                    pass
+
+                command = "sed -i 's/MYSQLCrypt md5/MYSQLCrypt crypt/g' /etc/pure-ftpd/db/mysql.conf"
+                Upgrade.executioner(command, command, 1)
+
+                command = "systemctl restart pure-ftpd-mysql.service"
+                Upgrade.executioner(command, command, 1)
 
             try:
                 connection.close()

@@ -49,7 +49,39 @@ class BackupManager:
     def backupSite(self, request=None, userID=None, data=None):
         currentACL = ACLManager.loadedACL(userID)
         websitesName = ACLManager.findAllSites(currentACL, userID)
+
+        command = 'chmod 755 /home/backup'
+        ProcessUtilities.executioner(command)
+
         proc = httpProc(request, 'backup/backup.html', {'websiteList': websitesName}, 'createBackup')
+        return proc.render()
+
+    def RestoreV2backupSite(self, request=None, userID=None, data=None):
+        if ACLManager.CheckForPremFeature('all'):
+            BackupStat = 1
+        else:
+            BackupStat = 0
+        currentACL = ACLManager.loadedACL(userID)
+        websitesName = ACLManager.findAllSites(currentACL, userID)
+        proc = httpProc(request, 'IncBackups/RestoreV2Backup.html', {'websiteList': websitesName, 'BackupStat': BackupStat}, 'createBackup')
+        return proc.render()
+
+    def CreateV2backupSite(self, request=None, userID=None, data=None):
+        currentACL = ACLManager.loadedACL(userID)
+        websitesName = ACLManager.findAllSites(currentACL, userID)
+        proc = httpProc(request, 'IncBackups/CreateV2Backup.html', {'websiteList': websitesName}, 'createBackup')
+        return proc.render()
+
+    def schedulev2Backups(self, request=None, userID=None, data=None):
+
+        if ACLManager.CheckForPremFeature('all'):
+            BackupStat = 1
+        else:
+            BackupStat = 0
+
+        currentACL = ACLManager.loadedACL(userID)
+        websitesName = ACLManager.findAllSites(currentACL, userID)
+        proc = httpProc(request, 'IncBackups/ScheduleV2Backup.html', {'websiteList': websitesName, "BackupStat": BackupStat}, 'createBackup')
         return proc.render()
 
     def gDrive(self, request=None, userID=None, data=None):
@@ -1782,5 +1814,61 @@ class BackupManager:
 
         except BaseException as msg:
             data_ret = {'status': 0, 'error_message': str(msg)}
+            json_data = json.dumps(data_ret)
+            return HttpResponse(json_data)
+
+    def CreateV2BackupStatus(self, userID=None, data=None):
+        try:
+            domain = data['domain']
+            currentACL = ACLManager.loadedACL(userID)
+            admin = Administrator.objects.get(pk=userID)
+
+            if ACLManager.checkOwnership(domain, admin, currentACL) == 1:
+                pass
+            else:
+                return ACLManager.loadError()
+
+            statusFile = f'/home/cyberpanel/{domain}_rustic_backup_log'
+
+            if ACLManager.CheckStatusFilleLoc(statusFile):
+                pass
+            else:
+                data_ret = {'abort': 1, 'installStatus': 0, 'installationProgress': "100",
+                            'currentStatus': 'Invalid status file.'}
+                json_data = json.dumps(data_ret)
+                return HttpResponse(json_data)
+
+            #currentStatus:"cat: /home/cyberpanel/9219: No such file or directory"
+
+            statusData = ProcessUtilities.outputExecutioner("cat " + statusFile).splitlines()
+
+            lastLine = statusData[-1]
+
+            if lastLine.find('[200]') > -1:
+                command = 'rm -f ' + statusFile
+                subprocess.call(shlex.split(command))
+                data_ret = {'abort': 1, 'installStatus': 1, 'installationProgress': "100",
+                            'currentStatus': 'Successfully Created.'}
+                json_data = json.dumps(data_ret)
+                return HttpResponse(json_data)
+            elif lastLine.find('[404]') > -1:
+                data_ret = {'abort': 1, 'installStatus': 0, 'installationProgress': "0",
+                            'error_message': ProcessUtilities.outputExecutioner("cat " + statusFile).splitlines()}
+                json_data = json.dumps(data_ret)
+                return HttpResponse(json_data)
+            else:
+                progress = lastLine.split(',')
+                currentStatus = progress[0]
+                try:
+                    installationProgress = progress[1]
+                except:
+                    installationProgress = 0
+                data_ret = {'abort': 0, 'installStatus': 0, 'installationProgress': installationProgress,
+                            'currentStatus': currentStatus}
+                json_data = json.dumps(data_ret)
+                return HttpResponse(json_data)
+
+        except BaseException as msg:
+            data_ret = {'abort': 0, 'installStatus': 0, 'installationProgress': "0", 'error_message': str(msg)}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)

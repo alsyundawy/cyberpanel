@@ -53,16 +53,19 @@ class WebsiteManager:
         self.childDomain = childDomain
 
     def createWebsite(self, request=None, userID=None, data=None):
-        url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
 
-        test_domain_data = {
-            "name": "test-domain",
-            "IP": ACLManager.GetServerIP(),
+        url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
+        data = {
+            "name": "all",
+            "IP": ACLManager.GetServerIP()
         }
 
         import requests
-        response = requests.post(url, data=json.dumps(test_domain_data))
-        test_domain_status = response.json()['status']
+        response = requests.post(url, data=json.dumps(data))
+        Status = response.json()['status']
+
+        if (Status == 1) or ProcessUtilities.decideServer() == ProcessUtilities.ent:
+            test_domain_status = 1
 
         currentACL = ACLManager.loadedACL(userID)
         adminNames = ACLManager.loadAllUsers(userID)
@@ -114,14 +117,7 @@ class WebsiteManager:
 
             ##
 
-            test_domain_data = {
-                "name": "test-domain",
-                "IP": ACLManager.GetServerIP(),
-            }
-
-            import requests
-            response = requests.post(url, data=json.dumps(test_domain_data))
-            test_domain_status = response.json()['status']
+            test_domain_status = 1
 
             Data = {'packageList': packagesName, "owernList": adminNames, 'WPVersions': FinalVersions,
                     'Plugins': Plugins, 'Randam_String': rnpss.lower(), 'test_domain_data': test_domain_status}
@@ -184,17 +180,6 @@ class WebsiteManager:
             response = requests.post(url, data=json.dumps(data))
             Status = response.json()['status']
 
-            test_domain_url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
-
-            test_domain_data = {
-                "name": "test-domain",
-                "IP": ACLManager.GetServerIP(),
-            }
-
-            import requests
-            response = requests.post(test_domain_url, data=json.dumps(test_domain_data))
-            test_domain_status = response.json()['status']
-            Data['test_domain_data'] = test_domain_status
 
             rnpss = randomPassword.generate_pass(10)
 
@@ -202,6 +187,7 @@ class WebsiteManager:
 
             if (Status == 1) or ProcessUtilities.decideServer() == ProcessUtilities.ent:
                 Data['wpsite'] = WPobj
+                Data['test_domain_data'] = 1
 
                 try:
                     DeleteID = request.GET.get('DeleteID', None)
@@ -706,16 +692,18 @@ class WebsiteManager:
         currentACL = ACLManager.loadedACL(userID)
         websitesName = ACLManager.findAllSites(currentACL, userID)
 
-        test_domain_url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
-
-        test_domain_data = {
-            "name": "test-domain",
-            "IP": ACLManager.GetServerIP(),
+        url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
+        data = {
+            "name": "all",
+            "IP": ACLManager.GetServerIP()
         }
 
         import requests
-        response = requests.post(test_domain_url, data=json.dumps(test_domain_data))
-        test_domain_status = response.json()['status']
+        response = requests.post(url, data=json.dumps(data))
+        Status = response.json()['status']
+
+        if (Status == 1) or ProcessUtilities.decideServer() == ProcessUtilities.ent:
+            test_domain_status = 1
 
         rnpss = randomPassword.generate_pass(10)
         proc = httpProc(request, 'websiteFunctions/createDomain.html',
@@ -1326,7 +1314,7 @@ class WebsiteManager:
                     'BucketName': BucketName
                 }
             except BaseException as msg:
-                config = {}
+                config = {'BackupType': BackupType}
                 pass
 
             svobj = RemoteBackupSchedule(RemoteBackupConfig=RemoteBackupConfigobj, Name=ScheduleName,
@@ -2183,7 +2171,7 @@ class WebsiteManager:
             time.sleep(2)
 
             data_ret = {'status': 1, 'createWebSiteStatus': 1, 'error_message': "None",
-                        'tempStatusPath': tempStatusPath}
+                        'tempStatusPath': tempStatusPath, 'LinuxUser': externalApp}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 
@@ -4672,21 +4660,21 @@ StrictHostKeyChecking no
 
             website = Websites.objects.get(domain=self.domain)
 
-            if website.externalApp != data['externalApp']:
-                data_ret = {'status': 0, 'error_message': 'External app mis-match.'}
-                json_data = json.dumps(data_ret)
-                return HttpResponse(json_data)
+            # if website.externalApp != data['externalApp']:
+            #     data_ret = {'status': 0, 'error_message': 'External app mis-match.'}
+            #     json_data = json.dumps(data_ret)
+            #     return HttpResponse(json_data)
 
             uBuntuPath = '/etc/lsb-release'
 
             if os.path.exists(uBuntuPath):
-                command = "echo '%s:%s' | chpasswd" % (data['externalApp'], data['password'])
+                command = "echo '%s:%s' | chpasswd" % (website.externalApp, data['password'])
             else:
-                command = 'echo "%s" | passwd --stdin %s' % (data['password'], data['externalApp'])
+                command = 'echo "%s" | passwd --stdin %s' % (data['password'], website.externalApp)
 
             ProcessUtilities.executioner(command)
 
-            data_ret = {'status': 1, 'error_message': 'None'}
+            data_ret = {'status': 1, 'error_message': 'None', 'LinuxUser': website.externalApp}
             json_data = json.dumps(data_ret)
             return HttpResponse(json_data)
 

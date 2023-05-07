@@ -15,6 +15,7 @@ from websiteFunctions.website import WebsiteManager
 import time
 import datetime
 import google.oauth2.credentials
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from plogical.backupSchedule import backupSchedule
@@ -33,7 +34,6 @@ try:
 except:
     pass
 import threading as multi
-
 
 class IncScheduler(multi.Thread):
     logPath = '/home/cyberpanel/incbackuplogs'
@@ -122,7 +122,7 @@ class IncScheduler(multi.Thread):
                                     break
 
         except BaseException as msg:
-            logging.writeToFile(str(msg))
+            logging.writeToFile( "%s [startBackup]"%str(msg))
 
     @staticmethod
     def git(type):
@@ -493,11 +493,12 @@ class IncScheduler(multi.Thread):
 
             if destinationConfig['type'] == 'local':
 
-                finalPath = '%s/%s' % (destinationConfig['path'].rstrip('/'), currentTime)
-                command = 'mkdir -p %s' % (finalPath)
-                ProcessUtilities.executioner(command)
 
                 if jobConfig[IncScheduler.frequency] == type:
+
+                    finalPath = '%s/%s' % (destinationConfig['path'].rstrip('/'), currentTime)
+                    command = 'mkdir -p %s' % (finalPath)
+                    ProcessUtilities.executioner(command)
 
                     ### Check if an old job prematurely killed, then start from there.
                     try:
@@ -601,15 +602,18 @@ Automatic backup failed for %s on %s.
                     backupjob.config = json.dumps(jobConfig)
                     backupjob.save()
             else:
-                import subprocess
-                import shlex
-                finalPath = '%s/%s' % (destinationConfig['path'].rstrip('/'), currentTime)
-                command = "ssh -o StrictHostKeyChecking=no -p " + destinationConfig[
-                    'port'] + " -i /root/.ssh/cyberpanel " + destinationConfig['username'] + "@" + destinationConfig[
-                              'ip'] + " mkdir -p %s" % (finalPath)
-                subprocess.call(shlex.split(command))
+
 
                 if jobConfig[IncScheduler.frequency] == type:
+
+                    import subprocess
+                    import shlex
+                    finalPath = '%s/%s' % (destinationConfig['path'].rstrip('/'), currentTime)
+                    command = "ssh -o StrictHostKeyChecking=no -p " + destinationConfig[
+                        'port'] + " -i /root/.ssh/cyberpanel " + destinationConfig['username'] + "@" + \
+                              destinationConfig[
+                                  'ip'] + " mkdir -p %s" % (finalPath)
+                    subprocess.call(shlex.split(command))
 
                     ### Check if an old job prematurely killed, then start from there.
                     # try:
@@ -964,29 +968,35 @@ Automatic backup failed for %s on %s.
     @staticmethod
     def RemoteBackup(function):
         try:
+            # print("....start remote backup...............")
             from websiteFunctions.models import RemoteBackupSchedule, RemoteBackupsites, WPSites
             from loginSystem.models import Administrator
             import json
             import time
             from plogical.applicationInstaller import ApplicationInstaller
             for config in RemoteBackupSchedule.objects.all():
+                # print("....start remote backup........site.......%s"%config.Name)
                 try:
                     configbakup = json.loads(config.config)
                     backuptype = configbakup['BackupType']
+                    # print("....start remote backup........site.......%s.. and bakuptype...%s" % (config.Name, backuptype))
                     if backuptype == 'Only DataBase':
                         Backuptype = "3"
                     elif backuptype == 'Only Website':
                         Backuptype = "2"
                     else:
                         Backuptype = "1"
-                except:
+                except BaseException as msg:
+                    print("....backup config type Error.%s" % str(msg))
                     continue
                 try:
-                    allRemoteBackupsiteobj = RemoteBackupsites.objects.filter(owner=config.pk)
+                    allRemoteBackupsiteobj = RemoteBackupsites.objects.filter(owner=config)
+                    # print("store site id.....%s"%str(allRemoteBackupsiteobj))
                     for i in allRemoteBackupsiteobj:
                         try:
                             backupsiteID = i.WPsites
                             wpsite = WPSites.objects.get(pk=backupsiteID)
+                            # print("site name.....%s"%wpsite.title)
                             AdminID = wpsite.owner.admin_id
                             Admin = Administrator.objects.get(pk=AdminID)
 
@@ -1353,11 +1363,107 @@ Automatic backup failed for %s on %s.
                 Backupobj.config = json.dumps(backupConfig)
                 Backupobj.save()
 
+                #S3 retention
+                #Needs a conversion table, because strings are stored instead of ints
+                retention_conversion = {
+                    "3 Days" : 259200,
+                    "1 Week" : 604800,
+                    "3 Weeks" : 1814400,
+                    "1 Month" : 2629743 
+                }
+                retentionSeconds = retention_conversion[Scheduleobj.fileretention]
+
+                bucket_obj = s3.Bucket(BucketName)
+                ts = time.time()
+                for file in bucket_obj.objects.all():
+                    result = float(ts - file.last_modified.timestamp())
+                    if result > retentionSeconds:
+                        BackupLogs(owner=plan, level='INFO', timeStamp=time.strftime("%b %d %Y, %H:%M:%S"),
+                                msg='File %s expired and deleted according to your retention settings.' % (
+                                    file.key)).save()
+                        file.delete()
+
             except BaseException as msg:
                 print("Version ID Error: %s"%str(msg))
         except BaseException as msg:
             print('%s. [SendToS3Cloud]' % (str(msg)))
             logging.writeToFile('%s. [SendToS3Cloud]' % (str(msg)))
+
+    @staticmethod
+    def FixMailSSL():
+        for website in Websites.objects.all():
+            virtualHostUtilities.setupAutoDiscover(1, '/home/cyberpanel/templogs', website.domain, website.admin)
+
+    @staticmethod
+    def v2Backups(function):
+        try:
+            # print("....start remote backup...............")
+            from websiteFunctions.models import Websites
+            from loginSystem.models import Administrator
+            import json
+            import time
+            if os.path.exists('/home/cyberpanel/v2backups'):
+                for website in Websites.objects.all():
+                    finalConfigPath = f'/home/cyberpanel/v2backups/{website.domain}'
+                    if os.path.exists(finalConfigPath):
+
+                        command = f'cat {finalConfigPath}'
+                        RetResult = ProcessUtilities.outputExecutioner(command)
+                        print(repr(RetResult))
+                        BackupConfig = json.loads(ProcessUtilities.outputExecutioner(command).rstrip('\n'))
+
+                        for value in BackupConfig['schedules']:
+                            try:
+
+                                if value['frequency'] == function:
+                                    extra_args = {}
+                                    extra_args['function'] = 'InitiateBackup'
+                                    extra_args['website'] = website.domain
+                                    extra_args['domain'] = website.domain
+                                    extra_args['BasePath'] = '/home/backup'
+                                    extra_args['BackendName'] = value['repo']
+                                    extra_args['BackupData'] = value['websiteData'] if 'websiteData' in value else False
+                                    extra_args['BackupEmails'] = value['websiteEmails'] if 'websiteEmails' in value else False
+                                    extra_args['BackupDatabase'] = value['websiteDatabases'] if 'websiteDatabases' in value else False
+
+                                    from plogical.Backupsv2 import CPBackupsV2
+                                    background = CPBackupsV2(extra_args)
+                                    RetStatus = background.InitiateBackup()
+
+                                    print(RetStatus)
+
+                                    if RetStatus == 0:
+                                        SUBJECT = "Automatic Backupv2 failed for %s on %s." % (website.domain, time.strftime("%m.%d.%Y_%H-%M-%S"))
+                                        adminEmailPath = '/home/cyberpanel/adminEmail'
+                                        adminEmail = open(adminEmailPath, 'r').read().rstrip('\n')
+                                        sender = 'root@%s' % (socket.gethostname())
+                                        error = ProcessUtilities.outputExecutioner(f'cat {background.StatusFile}')
+                                        TO = [adminEmail]
+                                        message = f"""\
+From: %s
+To: %s
+Subject: %s
+Automatic Backupv2 failed for %s on %s.
+{error}
+""" % (sender, ", ".join(TO), SUBJECT, website.domain, time.strftime("%m.%d.%Y_%H-%M-%S"))
+
+                                        logging.SendEmail(sender, TO, message)
+                                    else:
+                                        value['lastRun'] = time.strftime("%m.%d.%Y_%H-%M-%S")
+
+                                    background.DeleteSnapshots(f"--keep-daily {value['retention']}")
+                            except BaseException as msg:
+                                print("Error: [v2Backups]: %s" % str(msg))
+                                logging.writeToFile('%s. [v2Backups]' % (str(msg)))
+
+                        FinalContent = json.dumps(BackupConfig)
+                        WriteToFile = open(finalConfigPath, 'w')
+                        WriteToFile.write(FinalContent)
+                        WriteToFile.close()
+
+        except BaseException as msg:
+            print("Error: [v2Backups]: %s" % str(msg))
+            logging.writeToFile('%s. [v2Backups]' % (str(msg)))
 
 
 def main():
@@ -1370,8 +1476,11 @@ def main():
         IncScheduler.CalculateAndUpdateDiskUsage()
         return 0
 
-    if args.function == '30 Minutes' or args.function == '30 Minutes' or args.function == '1 Hour' or args.function == '6 Hours' or args.function == '12 Hours' or args.function == '1 Day' or args.function == '3 Days' or args.function == '1 Week':
+    if args.function == '30 Minutes' or args.function == '1 Hour' or args.function == '6 Hours' or args.function == '12 Hours' or args.function == '1 Day' or args.function == '3 Days' or args.function == '1 Week':
+        # IncScheduler.refresh_access_token()
+
         IncScheduler.RemoteBackup(args.function)
+        IncScheduler.v2Backups(args.function)
         return 0
 
     if args.function == 'forceRunAWSBackup':
@@ -1380,6 +1489,9 @@ def main():
 
     IncScheduler.CalculateAndUpdateDiskUsage()
     IncScheduler.WPUpdates()
+
+    if args.function == 'Weekly':
+        IncScheduler.FixMailSSL()
 
     ### Run incremental backups in sep thread
 

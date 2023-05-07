@@ -1,3 +1,5 @@
+import time
+
 import requests
 
 from plogical import CyberCPLogFileWriter as logging
@@ -5,6 +7,8 @@ import os
 import shlex
 import subprocess
 import socket
+
+from plogical.acl import ACLManager
 from plogical.processUtilities import ProcessUtilities
 try:
     from websiteFunctions.models import ChildDomains, Websites
@@ -78,60 +82,6 @@ class sslUtilities:
 
         except BaseException as msg:
             return [0, "347 " + str(msg) + " [issueSSLForDomain]"]
-    @staticmethod
-    def PatchVhostConf(virtualHostName):
-        try:
-            confPath = sslUtilities.Server_root + "/conf/vhosts/" + virtualHostName
-            completePathToConfigFile = confPath + "/vhost.conf"
-
-            DataVhost = open(completePathToConfigFile, 'r').read()
-
-            if DataVhost.find('/.well-known/acme-challenge') == -1:
-                if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
-                    WriteToFile = open(completePathToConfigFile, 'a')
-
-                    content = '''
-                    
-context /.well-known/acme-challenge {
-  location                /usr/local/lsws/Example/html/.well-known/acme-challenge
-  allowBrowse             1
-
-  rewrite  {
-     enable                  0
-  }
-  addDefaultCharset       off
-  phpIniOverride  {
-
-  }
-}
-'''
-                    WriteToFile.write(content)
-                    WriteToFile.close()
-                else:
-                    data = open(completePathToConfigFile, 'r').readlines()
-                    WriteToFile = open(completePathToConfigFile, 'w')
-                    Check = 0
-                    for items in data:
-                        if items.find('DocumentRoot /home/')> -1:
-                            if Check == 0:
-                                WriteToFile.write(items)
-                                WriteToFile.write('    Alias /.well-known/acme-challenge /usr/local/lsws/Example/html/.well-known/acme-challenge\n')
-                                Check = 1
-                            else:
-                                WriteToFile.write(items)
-                        else:
-                            WriteToFile.write(items)
-
-                    WriteToFile.close()
-
-                from plogical import installUtilities
-
-                installUtilities.installUtilities.reStartLiteSpeed()
-
-
-        except BaseException as msg:
-            return 0, str(msg)
-
 
     @staticmethod
     def installSSLForDomain(virtualHostName, adminEmail='example@example.org'):
@@ -381,72 +331,91 @@ context /.well-known/acme-challenge {
                 ProcessUtilities.executioner(command)
                 return 1
 
+
+    @staticmethod
+    def FindIfDomainInCloudflare(virtualHostName):
+        try:
+            import tldextract
+
+            RetStatus, SAVED_CF_Key, SAVED_CF_Email = ACLManager.FetchCloudFlareAPIKeyFromAcme()
+
+            if RetStatus:
+
+                extractDomain = tldextract.extract(virtualHostName)
+                topLevelDomain = extractDomain.domain + '.' + extractDomain.suffix
+                logging.CyberCPLogFileWriter.writeToFile(f'top level domain in cf: {topLevelDomain}')
+                import CloudFlare
+
+                params = {'name': topLevelDomain, 'per_page': 50}
+                cf = CloudFlare.CloudFlare(email=SAVED_CF_Email, token=SAVED_CF_Key)
+
+                try:
+                    zones = cf.zones.get(params=params)
+                except BaseException as msg:
+                    return 0, str(msg)
+
+                for zone in sorted(zones, key=lambda v: v['name']):
+                    logging.CyberCPLogFileWriter.writeToFile(f'zone: {zone["name"]}')
+                    if zone['name'] == topLevelDomain:
+                        if zone['status'] == 'active':
+                            return 1, None
+
+                return 0, 'Zone not found in Cloudflare'
+
+            else:
+                return 0, 'Error in finding keys.'
+        except BaseException as msg:
+            return 0, str(msg)
+
+    @staticmethod
+    def FindIfDomainInPowerDNS(virtualHostName):
+        try:
+            import tldextract
+
+            from plogical.dnsUtilities import DNS
+            from dns.models import Domains
+            extractDomain = tldextract.extract(virtualHostName)
+            topLevelDomain = extractDomain.domain + '.' + extractDomain.suffix
+            zone = Domains.objects.get(name=topLevelDomain)
+
+            DNS.createDNSRecord(zone, f'cptest.{topLevelDomain}', 'A', ACLManager.GetServerIP(), 0, 3600)
+
+            time.sleep(2)
+
+            result = socket.getaddrinfo(f'cptest.{topLevelDomain}', None, socket.AF_INET)[0]
+
+            # Return the IP address as a string
+            if result[4][0] == ACLManager.GetServerIP():
+                return 1, None
+
+            else:
+                return 0, 'IP Does not match'
+
+        except BaseException as msg:
+            return 0, str(msg)
+
     @staticmethod
     def obtainSSLForADomain(virtualHostName, adminEmail, sslpath, aliasDomain=None):
-        from plogical.acl import ACLManager
-        from plogical.sslv2 import sslUtilities as sslv2
-        import json
-        #
-        # url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
-        # data = {
-        #     "name": "all",
-        #     "IP": ACLManager.GetServerIP()
-        # }
-        #
-        # import requests
-        # response = requests.post(url, data=json.dumps(data))
-        #Status = response.json()['status']
-
-        Status = 1
-
-        if (Status == 1) or ProcessUtilities.decideServer() == ProcessUtilities.ent:
-            retStatus, message = sslv2.obtainSSLForADomain(virtualHostName, adminEmail, sslpath, aliasDomain)
-            if retStatus == 1:
-                return retStatus
-
         sender_email = 'root@%s' % (socket.gethostname())
 
-        sslUtilities.PatchVhostConf(virtualHostName)
-
-        if not os.path.exists('/usr/local/lsws/Example/html/.well-known/acme-challenge'):
-            command = f'mkdir -p /usr/local/lsws/Example/html/.well-known/acme-challenge'
-            ProcessUtilities.normalExecutioner(command)
-
-        CustomVerificationFile = f'/usr/local/lsws/Example/html/.well-known/acme-challenge/{virtualHostName}'
-        command = f'touch {CustomVerificationFile}'
-        ProcessUtilities.normalExecutioner(command)
+        CF_Check = 0
+        Namecheck_Check = 0
+        CyberPanel_Check = 0
 
 
-        URLFetchPathWWW = f'http://www.{virtualHostName}/.well-known/acme-challenge/{virtualHostName}'
-        URLFetchPathNONWWW = f'http://{virtualHostName}/.well-known/acme-challenge/{virtualHostName}'
+        CF_Check, message = sslUtilities.FindIfDomainInCloudflare(virtualHostName)
 
-        try:
-            resp = requests.get(URLFetchPathWWW, timeout=5)
+        DNS_TO_USE = ''
 
-            if resp.status_code == 200:
-                logging.CyberCPLogFileWriter.writeToFile(f'Status Code: 200 for: {URLFetchPathWWW}')
-                WWWStatus = 1
+        if CF_Check:
+            DNS_TO_USE = 'dns_cf'
+        else:
+            CyberPanel_Check, message = sslUtilities.FindIfDomainInPowerDNS(virtualHostName)
+
+            if CyberPanel_Check:
+                DNS_TO_USE = 'dns_pdns'
             else:
-                logging.CyberCPLogFileWriter.writeToFile(
-                    f'Status Code: {str(resp.status_code)} for: {URLFetchPathWWW}. Error: {resp.text}')
-        except BaseException as msg:
-            logging.CyberCPLogFileWriter.writeToFile(
-                f'Status Code: Unknown for: {URLFetchPathWWW}. Error: {str(msg)}')
-
-        try:
-            resp = requests.get(URLFetchPathNONWWW, timeout=5)
-            if resp.status_code == 200:
-                logging.CyberCPLogFileWriter.writeToFile(f'Status Code: 200 for: {URLFetchPathNONWWW}')
-                NONWWWStatus = 1
-            else:
-                logging.CyberCPLogFileWriter.writeToFile(f'Status Code: {str(resp.status_code)} for: {URLFetchPathNONWWW}. Error: {resp.text}')
-        except BaseException as msg:
-            logging.CyberCPLogFileWriter.writeToFile(
-                f'Status Code: Unkown for: {URLFetchPathNONWWW}. Error: {str(msg)}')
-
-        WWWStatus = 1
-        NONWWWStatus = 1
-
+                return 0, 'Domain is not active in any of the configured DNS provider.'
 
         try:
             acmePath = '/root/.acme.sh/acme.sh'
@@ -454,7 +423,7 @@ context /.well-known/acme-challenge {
             ### register account for zero ssl
 
             command = '%s --register-account -m %s' % (acmePath, adminEmail)
-            subprocess.call(shlex.split(command))
+            subprocess.check_output(shlex.split(command))
 
             # if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
             #     acmePath = '/home/cyberpanel/.acme.sh/acme.sh'
@@ -464,27 +433,24 @@ context /.well-known/acme-challenge {
                 existingCertPath = '/etc/letsencrypt/live/' + virtualHostName
                 if not os.path.exists(existingCertPath):
                     command = 'mkdir -p ' + existingCertPath
-                    subprocess.call(shlex.split(command))
+                    subprocess.check_output(shlex.split(command))
 
                 try:
-                    command = acmePath + " --issue -d " + virtualHostName + " -d www." + virtualHostName \
+                    command = acmePath + f" --issue -d {virtualHostName} -d *.{virtualHostName}" \
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --server letsencrypt'
+                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt'
                     #ResultText = open(logging.CyberCPLogFileWriter.fileName, 'r').read()
                     #CurrentMessage = "Trying to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName
-                    if (WWWStatus and NONWWWStatus):
+                    # logging.CyberCPLogFileWriter.writeToFile(CurrentMessage, 0)
 
-                        #logging.CyberCPLogFileWriter.writeToFile(CurrentMessage, 0)
+                    logging.CyberCPLogFileWriter.writeToFile(command, 0)
 
-                        logging.CyberCPLogFileWriter.writeToFile(command, 0)
+                    output = subprocess.check_output(shlex.split(command)).decode("utf-8")
+                    logging.CyberCPLogFileWriter.writeToFile(
+                        "Successfully obtained SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
 
-                        output = subprocess.check_output(shlex.split(command)).decode("utf-8")
-                        logging.CyberCPLogFileWriter.writeToFile("Successfully obtained SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
-
-                        logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, output, 'SSL Notification for %s.' % (virtualHostName))
-                    else:
-                        logging.CyberCPLogFileWriter.writeToFile(command, 0)
-                        raise subprocess.CalledProcessError(0, '', '')
+                    logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, output,
+                                                           'SSL Notification for %s.' % (virtualHostName))
 
                 except subprocess.CalledProcessError:
                     logging.CyberCPLogFileWriter.writeToFile(
@@ -495,31 +461,26 @@ context /.well-known/acme-challenge {
                     try:
                         command = acmePath + " --issue -d " + virtualHostName + ' --cert-file ' + existingCertPath \
                                   + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --server letsencrypt'
+                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt'
 
                         #ResultText = open(logging.CyberCPLogFileWriter.fileName, 'r').read()
                         CurrentMessage = '%s\nTrying to obtain SSL for: %s' % (finalText, virtualHostName)
 
-                        if NONWWWStatus:
-                            finalText = '%s\nTrying to obtain SSL for: %s' % (finalText, virtualHostName)
-                            logging.CyberCPLogFileWriter.writeToFile("Trying to obtain SSL for: " + virtualHostName, 0)
-                            logging.CyberCPLogFileWriter.writeToFile(command)
-                            output = subprocess.check_output(shlex.split(command)).decode("utf-8")
-                            logging.CyberCPLogFileWriter.writeToFile(
-                                "Successfully obtained SSL for: " + virtualHostName, 0)
-                            finalText = '%s\nSuccessfully obtained SSL for: %s.' % (finalText, virtualHostName)
-                            logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, finalText,
-                                                                   'SSL Notification for %s.' % (virtualHostName))
-
-                        else:
-                            logging.CyberCPLogFileWriter.writeToFile(command, 0)
-                            raise subprocess.CalledProcessError(0, '', '')
+                        finalText = '%s\nTrying to obtain SSL for: %s' % (finalText, virtualHostName)
+                        logging.CyberCPLogFileWriter.writeToFile("Trying to obtain SSL for: " + virtualHostName, 0)
+                        logging.CyberCPLogFileWriter.writeToFile(command)
+                        output = subprocess.check_output(shlex.split(command)).decode("utf-8")
+                        logging.CyberCPLogFileWriter.writeToFile(
+                            "Successfully obtained SSL for: " + virtualHostName, 0)
+                        finalText = '%s\nSuccessfully obtained SSL for: %s.' % (finalText, virtualHostName)
+                        logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, finalText,
+                                                               'SSL Notification for %s.' % (virtualHostName))
 
                     except subprocess.CalledProcessError:
                         logging.CyberCPLogFileWriter.writeToFile('Failed to obtain SSL, issuing self-signed SSL for: ' + virtualHostName, 0)
                         logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, 'Failed to obtain SSL, issuing self-signed SSL for: ' + virtualHostName,
                                                                'SSL Notification for %s.' % (virtualHostName))
-                        return 0
+                        return 0, output
             else:
 
                 existingCertPath = '/etc/letsencrypt/live/' + virtualHostName
@@ -534,7 +495,7 @@ context /.well-known/acme-challenge {
                     command = acmePath + " --issue -d " + virtualHostName + " -d www." + virtualHostName \
                               + ' -d ' + aliasDomain + ' -d www.' + aliasDomain\
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --server letsencrypt'
+                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt'
 
                     output = subprocess.check_output(shlex.split(command)).decode("utf-8")
                     logging.CyberCPLogFileWriter.writeToFile(
@@ -543,41 +504,29 @@ context /.well-known/acme-challenge {
                 except subprocess.CalledProcessError:
                     logging.CyberCPLogFileWriter.writeToFile(
                         "Failed to obtain SSL for: " + virtualHostName + ", www." + virtualHostName + ", " + aliasDomain + "and www." + aliasDomain + ",")
-                    return 0
+                    return 0, output
 
             ##
 
             if output.find('Cert success') > -1:
-                return 1
+                return 1, output
             else:
-                return 0
-
+                return 0, output
         except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [Failed to obtain SSL. [obtainSSLForADomain]]")
-            return 0
+            return 0, str(msg)
 
 
 def issueSSLForDomain(domain, adminEmail, sslpath, aliasDomain=None):
     try:
-        if sslUtilities.obtainSSLForADomain(domain, adminEmail, sslpath, aliasDomain) == 1:
+        retStatus, message = sslUtilities.obtainSSLForADomain(domain, adminEmail, sslpath, aliasDomain)
+        if retStatus == 1:
             if sslUtilities.installSSLForDomain(domain, adminEmail) == 1:
-                return [1, "None"]
+                return [1, message]
             else:
-                return [0, "210 Failed to install SSL for domain. [issueSSLForDomain]"]
+                return [0, message]
         else:
-
-            pathToStoreSSLPrivKey = "/etc/letsencrypt/live/%s/privkey.pem" % (domain)
-            pathToStoreSSLFullChain = "/etc/letsencrypt/live/%s/fullchain.pem" % (domain)
-
-            command = 'openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=' + domain + '" -keyout ' + pathToStoreSSLPrivKey + ' -out ' + pathToStoreSSLFullChain
-            cmd = shlex.split(command)
-            subprocess.call(cmd)
-
-            if sslUtilities.installSSLForDomain(domain) == 1:
-                logging.CyberCPLogFileWriter.writeToFile("Self signed SSL issued for " + domain + ".")
-                return [1, "Self signed certificate was issued. [issueSSLForDomain]"]
-            else:
-                return [0, "210 Failed to install SSL for domain. [issueSSLForDomain]"]
+            return [0, message]
 
     except BaseException as msg:
         return [0, "347 " + str(msg) + " [issueSSLForDomain]"]

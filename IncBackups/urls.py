@@ -22,4 +22,21 @@ urlpatterns = [
     url(r'^saveChanges$', views.save_changes, name='saveChanges'),
     url(r'^removeSite$', views.remove_site, name='removeSite'),
     url(r'^addWebsite$', views.add_website, name='addWebsite'),
+    ### V2 Backups URls
+    url(r'^CreateV2Backup$', views.CreateV2Backup, name='CreateV2Backup'),
+    url(r'^ConfigureV2Backup$', views.ConfigureV2Backup, name='ConfigureV2Backup'),
+    url(r'^ConfigureV2BackupSetup$', views.ConfigureV2BackupSetup, name='ConfigureV2BackupSetup'),
+    url(r'^RestoreV2backupSite$', views.RestoreV2backupSite, name='RestoreV2backupSite'),
+    url(r'^selectwebsiteRetorev2$', views.selectwebsiteRetorev2, name='selectwebsiteRetorev2'),
+    url(r'^selectreporestorev2$', views.selectreporestorev2, name='selectreporestorev2'),
+    url(r'^RestorePathV2$', views.RestorePathV2, name='RestorePathV2'),
+    url(r'^CreateV2BackupButton$', views.CreateV2BackupButton, name='CreateV2BackupButton'),
+    url(r'^selectwebsiteCreatev2$', views.selectwebsiteCreatev2, name='selectwebsiteCreatev2'),
+    url(r'^CreateV2BackupStatus$', views.CreateV2BackupStatus, name='CreateV2BackupStatus'),
+    url(r'^ConfigureSftpV2Backup$', views.ConfigureSftpV2Backup, name='ConfigureSftpV2Backup'),
+
+    url(r'^schedulev2Backups$', views.schedulev2Backups, name='schedulev2Backups'),
+    url(r'^DeleteScheduleV2$', views.DeleteScheduleV2, name='DeleteScheduleV2'),
+    url(r'^CreateScheduleV2$', views.CreateScheduleV2, name='CreateScheduleV2'),
+
 ]
