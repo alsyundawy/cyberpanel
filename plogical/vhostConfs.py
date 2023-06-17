@@ -196,7 +196,6 @@ context /.well-known/acme-challenge {
 </VirtualHost>
 """
 
-
     lswsChildConf = """<VirtualHost *:80>
 
     ServerName {virtualHostName}
@@ -214,19 +213,20 @@ context /.well-known/acme-challenge {
 
 </VirtualHost>"""
 
-    apacheConf = """<VirtualHost *:8081>
+    apacheConf = """<VirtualHost *:8083>
 
         ServerName {virtualHostName}
         ServerAlias www.{virtualHostName}
         ServerAdmin {administratorEmail}
         SuexecUserGroup {externalApp} {externalApp}
         DocumentRoot /home/{virtualHostName}/public_html/
-        <Proxy "unix:/var/run/php-fpm/{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
+        Alias /.well-known/acme-challenge /usr/local/lsws/Example/html/.well-known/acme-challenge
+        <Proxy "unix:{sockPath}{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
         ProxySet disablereuse=off
         </proxy>
         <FilesMatch \.php$>
                     SetHandler proxy:fcgi://php-fpm-{externalApp}
-            </FilesMatch>
+        </FilesMatch>
         #CustomLog /home/{virtualHostName}/logs/{virtualHostName}.access_log combined
         #AddHandler application/x-httpd-php{php} .php .php7 .phtml
         
@@ -246,7 +246,7 @@ context /.well-known/acme-challenge {
          ServerAdmin {administratorEmail}
          SuexecUserGroup {externalApp} {externalApp}
          DocumentRoot /home/{virtualHostName}/public_html/
-         <Proxy "unix:/var/run/php-fpm/{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
+         <Proxy "unix:{sockPath}{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
             ProxySet disablereuse=off
          </proxy>
          <FilesMatch \.php$>
@@ -264,24 +264,24 @@ context /.well-known/acme-challenge {
 
          SSLEngine on
          SSLVerifyClient none
-         SSLCertificateFile /etc/httpd/conf.d/ssl/{virtualHostName}.fullchain.pem
-         SSLCertificateKeyFile /etc/httpd/conf.d/ssl/{virtualHostName}.privkey.pem
+         SSLCertificateFile {SSLBase}.fullchain.pem
+         SSLCertificateKeyFile {SSLBase}.privkey.pem
 
 </VirtualHost>
 """
-    apacheConfChild = """<VirtualHost *:8081>
+    apacheConfChild = """<VirtualHost *:8083>
 
         ServerName {virtualHostName}
         ServerAlias www.{virtualHostName}
         ServerAdmin {administratorEmail}
         SuexecUserGroup {externalApp} {externalApp}
         DocumentRoot {path}
-        <Proxy "unix:/var/run/php-fpm/{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
+        <Proxy "unix:{sockPath}{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
         ProxySet disablereuse=off
         </proxy>
         <FilesMatch \.php$>
                     SetHandler proxy:fcgi://php-fpm-{externalApp}
-            </FilesMatch>
+        </FilesMatch>
         #CustomLog /home/{virtualHostName}/logs/{virtualHostName}.access_log combined
         #AddHandler application/x-httpd-php{php} .php .php7 .phtml
         
@@ -301,7 +301,7 @@ context /.well-known/acme-challenge {
         ServerAdmin {administratorEmail}
         SuexecUserGroup {externalApp} {externalApp}
         DocumentRoot {path}
-        <Proxy "unix:/var/run/php-fpm/{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
+        <Proxy "unix:{sockPath}{virtualHostName}.sock|fcgi://php-fpm-{externalApp}">
             ProxySet disablereuse=off
         </proxy>
         <FilesMatch \.php$>
@@ -318,14 +318,14 @@ context /.well-known/acme-challenge {
         </Directory>
         SSLEngine on
         SSLVerifyClient none
-        SSLCertificateFile /etc/httpd/conf.d/ssl/{virtualHostName}.fullchain.pem
-        SSLCertificateKeyFile /etc/httpd/conf.d/ssl/{virtualHostName}.privkey.pem
+        SSLCertificateFile {SSLBase}.fullchain.pem
+        SSLCertificateKeyFile {SSLBase}.privkey.pem
 
 </VirtualHost>
 """
     proxyApacheBackend = """extprocessor apachebackend {
   type                    proxy
-  address                 http://127.0.0.1:8081
+  address                 http://127.0.0.1:8083
   maxConns                100
   pcKeepAliveTimeout      60
   initTimeout             60
@@ -370,6 +370,20 @@ accesslog $VH_ROOT/logs/$VH_NAME.access_log {
   compressArchive         1
 }
 
+context /.well-known/acme-challenge {
+  location                /usr/local/lsws/Example/html/.well-known/acme-challenge
+  allowBrowse             1
+
+  rewrite  {
+    enable                  0
+  }
+  addDefaultCharset       off
+
+  phpIniOverride  {
+
+  }
+}
+
 rewrite  {
   enable                  1
   rules                   <<<END_rules
@@ -383,9 +397,9 @@ REWRITERULE ^(.*)$ HTTP://proxyApacheBackendSSL/$1 [P,L]
 
 """
     phpFpmPool = """[{www}]
-listen = /var/run/php-fpm/{Sock}.sock
+listen = {sockPath}{Sock}.sock
 listen.owner = nobody
-listen.group = nobody
+listen.group = {group}
 listen.mode = 0660
 user = {externalApp}
 group = {externalApp}
@@ -396,9 +410,9 @@ pm.min_spare_servers = 1
 pm.max_spare_servers = 1
 """
     phpFpmPoolReplace = """[{www}]
-listen = /var/run/php-fpm/{Sock}.sock
+listen = {sockPath}{Sock}.sock
 listen.owner = nobody
-listen.group = nobody
+listen.group = {group}
 listen.mode = 0660
 user = {externalApp}
 group = {externalApp}

@@ -72,7 +72,7 @@ class CPBackupsV2(multi.Thread):
 
                 new_Acess_token = self.refresh_V2Gdive_token(refreshToken)
 
-                command = f"""rclone config update {reponame} token '{{"access_token":"{new_Acess_token}","token_type":"Bearer","refresh_token":"{refreshToken}","expiry":"2024-04-08T21:53:00.123456789Z"}}' --non-interactive"""
+                command = f"""rclone config update '{reponame}' token '{{"access_token":"{new_Acess_token}","token_type":"Bearer","refresh_token":"{refreshToken}","expiry":"2024-04-08T21:53:00.123456789Z"}}' --non-interactive"""
                 result = ProcessUtilities.outputExecutioner(command, self.website.externalApp, True)
 
                 if os.path.exists(ProcessUtilities.debugPath):
@@ -119,9 +119,9 @@ class CPBackupsV2(multi.Thread):
         ## Set up the repo name to be used
 
         if self.data['BackendName'] != 'local':
-            self.repo = f"rclone:{self.data['BackendName']}:{self.data['domain']}"
+            self.repo = f"rclone:'{self.data['BackendName']}':{self.data['domain']}"
         else:
-            self.repo = f"rclone:{self.data['BackendName']}:/home/{self.data['domain']}/incrementalbackups"
+            self.repo = f"rclone:'{self.data['BackendName']}':/home/{self.data['domain']}/incrementalbackups"
 
         ### This will contain list of all snapshots id generated and it will be merged
 
@@ -1086,8 +1086,13 @@ team_drive =
 
             finalConfigPath = f'/home/cyberpanel/v2backups/{website}'
 
+            if not os.path.exists('/home/cyberpanel/v2backups/'):
+
+                command = 'mkdir -p /home/cyberpanel/v2backups/'
+                ProcessUtilities.executioner(command, 'cyberpanel')
+
+
             if os.path.exists(finalConfigPath):
-                logging.CyberCPLogFileWriter.writeToFile('22222')
 
                 command = f'cat {finalConfigPath}'
                 RetResult = ProcessUtilities.outputExecutioner(command)

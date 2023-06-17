@@ -618,8 +618,17 @@ class vhost:
     def changePHP(vhFile, phpVersion):
 
         from pathlib import Path
-        HomePath = Path("/home/%s" % (vhFile.split('/')[-2]))
-        virtualHostUser = HomePath.owner()
+        domain = vhFile.split('/')[6]
+        print(domain)
+        try:
+            website = Websites.objects.get(domain=domain)
+            externalApp = website.externalApp
+        except:
+            child = ChildDomains.objects.get(domain=domain)
+            externalApp = child.master.externalApp
+        #HomePath = website.externalApp
+        virtualHostUser = externalApp
+
         phpDetachUpdatePath = '/home/%s/.lsphp_restart.txt' % (vhFile.split('/')[-2])
         if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
             try:
@@ -657,7 +666,10 @@ class vhost:
                     logging.CyberCPLogFileWriter.writeToFile('apache vhost 1')
 
                     php = PHPManager.getPHPString(phpVersion)
-                    command = "systemctl restart php%s-php-fpm" % (php)
+
+                    phpService = ApacheVhost.DecideFPMServiceName(phpVersion)
+
+                    command = f"systemctl restart {phpService}"
                     ProcessUtilities.normalExecutioner(command)
 
                 print("1,None")
