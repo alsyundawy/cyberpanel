@@ -270,7 +270,8 @@ class sslUtilities:
                     except BaseException as msg:
                         website = Websites.objects.get(domain=virtualHostName)
                         externalApp = website.externalApp
-                        DocumentRoot = '    DocumentRoot /home/' + virtualHostName + '/public_html\n'
+                        docRoot = ACLManager.FindDocRootOfSite(None, virtualHostName)
+                        DocumentRoot = f'    DocumentRoot {docRoot}\n'
 
                     data = open(completePathToConfigFile, 'r').readlines()
                     phpHandler = ''
@@ -402,6 +403,16 @@ class sslUtilities:
         Namecheck_Check = 0
         CyberPanel_Check = 0
 
+        #### if website already have an SSL, better not issue again - need to check for wild-card
+        filePath = '/etc/letsencrypt/live/%s/fullchain.pem' % (virtualHostName)
+        if os.path.exists(filePath):
+            import OpenSSL
+            x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, open(filePath, 'r').read())
+            SSLProvider = x509.get_issuer().get_components()[1][1].decode('utf-8')
+
+            if SSLProvider != 'Denial':
+                return 1, 'This domain already have a valid SSL.'
+
 
         CF_Check, message = sslUtilities.FindIfDomainInCloudflare(virtualHostName)
 
@@ -438,7 +449,7 @@ class sslUtilities:
                 try:
                     command = acmePath + f" --issue -d {virtualHostName} -d *.{virtualHostName}" \
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt'
+                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt --dnssleep 20'
                     #ResultText = open(logging.CyberCPLogFileWriter.fileName, 'r').read()
                     #CurrentMessage = "Trying to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName
                     # logging.CyberCPLogFileWriter.writeToFile(CurrentMessage, 0)
@@ -461,7 +472,7 @@ class sslUtilities:
                     try:
                         command = acmePath + " --issue -d " + virtualHostName + ' --cert-file ' + existingCertPath \
                                   + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt'
+                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt --dnssleep 20'
 
                         #ResultText = open(logging.CyberCPLogFileWriter.fileName, 'r').read()
                         CurrentMessage = '%s\nTrying to obtain SSL for: %s' % (finalText, virtualHostName)
@@ -495,7 +506,7 @@ class sslUtilities:
                     command = acmePath + " --issue -d " + virtualHostName + " -d www." + virtualHostName \
                               + ' -d ' + aliasDomain + ' -d www.' + aliasDomain\
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt'
+                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + f' --dns {DNS_TO_USE} -k ec-256 --force --server letsencrypt --dnssleep 20'
 
                     output = subprocess.check_output(shlex.split(command)).decode("utf-8")
                     logging.CyberCPLogFileWriter.writeToFile(

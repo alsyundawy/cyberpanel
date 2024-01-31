@@ -518,7 +518,6 @@ class MailServerManager(multi.Thread):
             else:
                 return ACLManager.loadErrorJson()
             try:
-
                 emailDomain = Domains.objects.get(domain=selectedDomain)
             except:
                 raise BaseException('No emails exist for this domain.')
@@ -666,6 +665,9 @@ class MailServerManager(multi.Thread):
                 command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.8/site-packages/tldextract/.suffix_cache'
                 ProcessUtilities.executioner(command)
 
+                command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python*/site-packages/tldextract/.suffix_cache'
+                ProcessUtilities.executioner(command, None, True)
+
                 import tldextract
 
                 extractDomain = tldextract.extract(domainName)
@@ -730,6 +732,9 @@ class MailServerManager(multi.Thread):
 
                 command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.8/site-packages/tldextract/.suffix_cache'
                 ProcessUtilities.executioner(command)
+
+                command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python*/site-packages/tldextract/.suffix_cache'
+                ProcessUtilities.executioner(command, None, True)
 
                 import tldextract
 
@@ -1375,6 +1380,39 @@ class MailServerManager(multi.Thread):
 
         return 1
 
+    def installOpenDKIMNew(self):
+        try:
+            logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
+                                                      'Installing opendkim..,40')
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+                command = 'yum -y install opendkim'
+            elif ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                command = 'dnf install opendkim -y'
+            else:
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install opendkim'
+
+            os.system(command)
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                command = 'dnf install opendkim-tools -y'
+                ProcessUtilities.executioner(command)
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+                command = 'apt install opendkim-tools -y'
+                ProcessUtilities.executioner(command)
+
+                command = 'mkdir -p /etc/opendkim/keys/'
+                ProcessUtilities.executioner(command)
+
+
+        except BaseException as msg:
+            logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
+                                                      '%s [installOpenDKIM][404]' % (str(msg)), 10)
+            return 0
+
+        return 1
+
     def configureOpenDKIM(self):
         try:
 
@@ -1435,6 +1473,7 @@ milter_default_action = accept
             return 1
 
         except BaseException as msg:
+            logging.CyberCPLogFileWriter.writeToFile(f'Error in configureOpenDKIM {str(msg)}')
             return 0
 
     def fixCyberPanelPermissions(self):
@@ -1646,6 +1685,11 @@ milter_default_action = accept
                 return 0
 
             logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'], 'Restoreing OpenDKIM configurations..,70')
+
+            if self.installOpenDKIMNew() == 0:
+                logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
+                                                          'Install OpenDKIM failed. [404].')
+                return 0
 
             if self.configureOpenDKIM() == 0:
                 logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'], 'configureOpenDKIM failed. [404].')

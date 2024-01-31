@@ -50,6 +50,8 @@ class CPBackupsV2(multi.Thread):
         except:
             pass
 
+        statusRes, message = self.InstallRustic()
+
         ### set self.website as it is needed in many functions
         from websiteFunctions.models import Websites
         self.website = Websites.objects.get(domain=self.data['domain'])
@@ -1135,6 +1137,23 @@ team_drive =
         except BaseException as msg:
             return 0, str(msg)
 
+
+
+    @staticmethod
+    def DeleteRepoScheduleV2(website, repo, eu):
+        try:
+            finalConfigPath = f'/home/{website}/.config/rclone/rclone.conf'
+
+            if os.path.exists(finalConfigPath):
+                command = f"sed -i '/\[{repo}\]/,/^$/d' {finalConfigPath}"
+                ProcessUtilities.outputExecutioner(command, eu, True)
+
+
+                return 1, 'Done'
+            else:
+                return 0, "Repo not found!"
+        except BaseException as msg:
+            return 0, str(msg)
     # def BackupEmails(self):
     #
     #     ### This function will backup emails of the website, also need to take care of emails that we need to exclude
@@ -1243,13 +1262,25 @@ team_drive =
                     return 0, str(response.content)
 
                 # sudo mv filename /usr/bin/
-                command = 'wget -P /home/rustic https://github.com/rustic-rs/rustic/releases/download/%s/rustic-%s-x86_64-unknown-linux-musl.tar.gz' % (
-                version, version)
-                ProcessUtilities.executioner(command)
+                from plogical.acl import ACLManager
 
-                command = 'tar xzf /home/rustic/rustic-%s-x86_64-unknown-linux-musl.tar.gz -C /home/rustic//' % (
-                    version)
-                ProcessUtilities.executioner(command)
+                if ACLManager.ISARM():
+                    command = 'wget -P /home/rustic https://github.com/rustic-rs/rustic/releases/download/%s/rustic-%s-aarch64-unknown-linux-gnu.tar.gz' % (
+                        version, version)
+                    ProcessUtilities.executioner(command)
+
+                    command = 'tar xzf /home/rustic/rustic-%s-aarch64-unknown-linux-gnu.tar.gz -C /home/rustic//' % (
+                        version)
+                    ProcessUtilities.executioner(command)
+
+                else:
+                    command = 'wget -P /home/rustic https://github.com/rustic-rs/rustic/releases/download/%s/rustic-%s-x86_64-unknown-linux-musl.tar.gz' % (
+                version, version)
+                    ProcessUtilities.executioner(command)
+
+                    command = 'tar xzf /home/rustic/rustic-%s-x86_64-unknown-linux-musl.tar.gz -C /home/rustic//' % (
+                        version)
+                    ProcessUtilities.executioner(command)
 
                 command = 'sudo mv /home/rustic/rustic /usr/bin/'
                 ProcessUtilities.executioner(command)

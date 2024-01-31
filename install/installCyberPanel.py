@@ -40,6 +40,15 @@ def get_Ubuntu_release():
 class InstallCyberPanel:
     mysql_Root_password = ""
     mysqlPassword = ""
+    CloudLinux8 = 0
+
+    @staticmethod
+    def OSFlags():
+        if os.path.exists("/etc/redhat-release"):
+            data = open('/etc/redhat-release', 'r').read()
+
+            if data.find('CloudLinux 8') > -1 or data.find('cloudlinux 8') > -1:
+                InstallCyberPanel.CloudLinux8 = 1
 
     def __init__(self, rootPath, cwd, distro, ent, serial=None, port=None, ftp=None, dns=None, publicip=None,
                  remotemysql=None, mysqlhost=None, mysqldb=None, mysqluser=None, mysqlpassword=None, mysqlport=None):
@@ -58,6 +67,10 @@ class InstallCyberPanel:
         self.mysqlpassword = mysqlpassword
         self.mysqlport = mysqlport
         self.mysqldb = mysqldb
+
+        ## TURN ON OS FLAGS FOR SPECIFIC NEEDS LATER
+
+        InstallCyberPanel.OSFlags()
 
     @staticmethod
     def stdOut(message, log=0, exit=0, code=os.EX_OK):
@@ -204,6 +217,9 @@ class InstallCyberPanel:
             command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp81*'
             os.system(command)
 
+            command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp82*'
+            os.system(command)
+
         elif self.distro == centos:
             command = 'yum -y groupinstall lsphp-all'
             install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
@@ -241,7 +257,7 @@ class InstallCyberPanel:
             command = 'dnf install lsphp71* lsphp72* lsphp73* lsphp74* lsphp80* --exclude lsphp73-pecl-zip --exclude *imagick* -y --skip-broken'
             subprocess.call(command, shell=True)
 
-            command = 'dnf install lsphp81* --exclude *imagick* -y --skip-broken'
+            command = 'dnf install lsphp81* lsphp82* --exclude *imagick* -y --skip-broken'
             subprocess.call(command, shell=True)
         
         if self.distro == openeuler:
@@ -252,39 +268,73 @@ class InstallCyberPanel:
 
         ############## Install mariadb ######################
 
-        mRepo = '/etc/yum.repos.d/MariaDB.repo'
-
         if self.distro == ubuntu:
 
-            if get_Ubuntu_release() == 18.10:
-                command = 'DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common -y'
-                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+            command = 'DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common -y'
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
-                command = "apt-key adv --fetch-keys 'https://mariadb.org/mariadb_release_signing_key.asc'"
-                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
+            command = "DEBIAN_FRONTEND=noninteractive apt-get install apt-transport-https curl -y"
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
-                command = "add-apt-repository 'deb [arch=amd64,arm64,ppc64el] https://mirror.yongbok.net/mariadb/repo/10.4/ubuntu bionic main'"
-                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
+            command = "mkdir -p /etc/apt/keyrings"
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
-            command = "DEBIAN_FRONTEND=noninteractive apt-get -y install mariadb-server"
+            command = "curl -o /etc/apt/keyrings/mariadb-keyring.pgp 'https://mariadb.org/mariadb_release_signing_key.pgp'"
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
+            RepoPath = '/etc/apt/sources.list.d/mariadb.sources'
+            RepoContent = f"""
+# MariaDB 10.11 repository list - created 2023-12-11 07:53 UTC
+# https://mariadb.org/download/
+X-Repolib-Name: MariaDB
+Types: deb
+# deb.mariadb.org is a dynamic mirror if your preferred mirror goes offline. See https://mariadb.org/mirrorbits/ for details.
+# URIs: https://deb.mariadb.org/10.11/ubuntu
+URIs: https://mirrors.gigenet.com/mariadb/repo/10.11/ubuntu
+Suites: jammy
+Components: main main/debug
+Signed-By: /etc/apt/keyrings/mariadb-keyring.pgp
+"""
+            WriteToFile = open(RepoPath, 'w')
+            WriteToFile.write(RepoContent)
+            WriteToFile.close()
+
+            command = 'DEBIAN_FRONTEND=noninteractive apt-get update -y'
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+
+            command = "DEBIAN_FRONTEND=noninteractive apt-get install mariadb-server -y"
         elif self.distro == centos:
-            command = 'yum --enablerepo=mariadb -y install MariaDB-server MariaDB-client'
-        elif self.distro == cent8 or self.distro == openeuler:
-            ### check if cent8 which means Alma8 then add Mariadb 10.6 repo
-#             if self.distro == cent8:
-#                 content = """
-# [mariadb]
-# name = MariaDB
-# baseurl = http://yum.mariadb.org/10.6/rhel8-amd64
-# module_hotfixes=1
-# gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
-# gpgcheck=1
-# """
-#                 writeToFile = open('/etc/yum.repos.d/mariadb.repo', 'w')
-#                 writeToFile.write(content)
-#                 writeToFile.close()
 
-            command = 'dnf -y install mariadb-server'
+            RepoPath = '/etc/yum.repos.d/mariadb.repo'
+            RepoContent = f"""
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.11/rhel8-amd64
+module_hotfixes=1
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1            
+"""
+            WriteToFile = open(RepoPath, 'w')
+            WriteToFile.write(RepoContent)
+            WriteToFile.close()
+
+            command = 'dnf install mariadb-server -y'
+        elif self.distro == cent8 or self.distro == openeuler:
+
+            command = 'curl -LsS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | sudo bash -s -- --mariadb-server-version=10.11'
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+            command = 'yum remove mariadb* -y'
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+            command = 'sudo dnf -qy module disable mariadb'
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+            command = 'sudo dnf module reset mariadb -y'
+            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+
+            command = 'dnf install MariaDB-server MariaDB-client MariaDB-backup -y'
 
         install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
@@ -505,7 +555,7 @@ class InstallCyberPanel:
                 install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
 
-                if get_Ubuntu_release() > 20:
+                if get_Ubuntu_release() > 21.00:
                     ### change mysql md5 to crypt
 
                     command = "sed -i 's/MYSQLCrypt md5/MYSQLCrypt crypt/g' /etc/pure-ftpd/db/mysql.conf"
@@ -551,13 +601,6 @@ class InstallCyberPanel:
                 #     InstallCyberPanel.stdOut("[ERROR] Unable to create /etc/resolv.conf: " + str(e) +
                 #                              ".  This may need to be fixed manually as 'echo \"nameserver 8.8.8.8\"> "
                 #                              "/etc/resolv.conf'", 1, 1, os.EX_OSERR)
-
-            # if self.distro == cent8:
-            #     command = 'dnf config-manager --set-enabled PowerTools'
-            #     install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
-            #
-            #     command = 'curl -o /etc/yum.repos.d/powerdns-auth-master.repo https://repo.powerdns.com/repo-files/centos-auth-master.repo'
-            #     install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
             if self.distro == ubuntu:
                 command = "DEBIAN_FRONTEND=noninteractive apt-get -y install pdns-server pdns-backend-mysql"

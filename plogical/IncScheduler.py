@@ -5,6 +5,7 @@ sys.path.append('/usr/local/CyberCP')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "CyberCP.settings")
 import django
 django.setup()
+from plogical.getSystemInformation import SystemInformation
 from IncBackups.IncBackupsControl import IncJobs
 from IncBackups.models import BackupJob
 from random import randint
@@ -68,7 +69,11 @@ class IncScheduler(multi.Thread):
                 logging.statusWriter(IncScheduler.logPath, 'Job Description:\n\n Destination: %s, Frequency: %s.\n ' % (
                     job.destination, job.frequency), 1)
                 if job.frequency == type:
+
+
+                    ### now run backups
                     for web in job.jobsites_set.all():
+
                         logging.statusWriter(IncScheduler.logPath, 'Backing up %s.' % (web.website), 1)
 
                         extraArgs = {}
@@ -425,14 +430,28 @@ class IncScheduler(multi.Thread):
                                         # print('Fetch all folders in main folder: %s (%s) time:-%s' % (file.get('name'), file.get('id'), file.get('createdTime')))
                                         # logging.writeToFile('Fetch all folders in main folder: %s (%s) time:-%s' % (file.get('name'), file.get('id'),file.get('createdTime')))
                                         ab = file.get('createdTime')[:10]
-                                        filename = file.get('name')
+                                        print(f'File from gdrive {file.get("name")}')
+                                        filename = file.get("name")
                                         fileDeleteID = file.get('id')
                                         timestamp = time.mktime(datetime.datetime.strptime(ab, "%Y-%m-%d").timetuple())
+
+                                        print(f'Folder creation time on gdrive {timestamp}')
+                                        logging.writeToFile(f'Folder creation time on gdrive {timestamp}')
+
                                         CUrrenttimestamp = time.time()
-                                        timerrtention = gDriveData['FileRetentiontime']
+                                        try:
+                                            timerrtention = gDriveData['FileRetentiontime']
+                                            print(f'Retention time {timerrtention}')
+                                            logging.writeToFile(f'Retention time {timerrtention}')
+                                        except:
+                                            print(f'Retention time not defined.')
+
                                         if (timerrtention == '1d'):
                                             new = CUrrenttimestamp - float(86400)
+                                            print(f'New time {new}')
                                             if (new >= timestamp):
+                                                print(f'New time {new}, Folder created time {timestamp}')
+                                                logging.writeToFile(f'New time {new}, Folder created time {timestamp}')
                                                 resp = drive.files().delete(fileId=fileDeleteID).execute()
                                                 logging.writeToFile('Delete file %s ' % filename)
                                         elif (timerrtention == '1w'):
@@ -1390,11 +1409,6 @@ Automatic backup failed for %s on %s.
             logging.writeToFile('%s. [SendToS3Cloud]' % (str(msg)))
 
     @staticmethod
-    def FixMailSSL():
-        for website in Websites.objects.all():
-            virtualHostUtilities.setupAutoDiscover(1, '/home/cyberpanel/templogs', website.domain, website.admin)
-
-    @staticmethod
     def v2Backups(function):
         try:
             # print("....start remote backup...............")
@@ -1465,6 +1479,25 @@ Automatic Backupv2 failed for %s on %s.
             print("Error: [v2Backups]: %s" % str(msg))
             logging.writeToFile('%s. [v2Backups]' % (str(msg)))
 
+    @staticmethod
+    def CheckHostName():
+        try:
+            from loginSystem.models import Administrator
+            admin = Administrator.objects.get(pk=1)
+            config = json.loads(admin.config)
+
+            ### probably need to add temporary dns resolver nameserver here - pending
+
+            try:
+                CurrentHostName = config['hostname']
+                skipRDNSCheck = config['skipRDNSCheck']
+            except:
+                CurrentHostName = ''
+                skipRDNSCheck = 1
+
+            virtualHostUtilities.OnBoardingHostName(CurrentHostName, '/home/cyberpanel/onboarding_temp_path', skipRDNSCheck)
+        except BaseException as msg:
+            logging.writeToFile(f'{str(msg)}. [Cron.CheckHostName]')
 
 def main():
     parser = argparse.ArgumentParser(description='CyberPanel Installer')
@@ -1491,7 +1524,10 @@ def main():
     IncScheduler.WPUpdates()
 
     if args.function == 'Weekly':
-        IncScheduler.FixMailSSL()
+        try:
+            IncScheduler.FixMailSSL()
+        except:
+            pass
 
     ### Run incremental backups in sep thread
 
@@ -1507,6 +1543,7 @@ def main():
     IncScheduler.checkDiskUsage()
     IncScheduler.startNormalBackups(args.function)
     IncScheduler.runAWSBackups(args.function)
+    IncScheduler.CheckHostName()
 
     ib.join()
 

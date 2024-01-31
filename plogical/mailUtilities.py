@@ -59,9 +59,102 @@ class mailUtilities:
             os.makedirs("/usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/domains/")
 
         finalPath = "/usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/domains/" + domain + ".ini"
+        finalPathJson = "/usr/local/lscp/cyberpanel/rainloop/data/_data_/_default_/domains/" + domain + ".json"
 
         if not os.path.exists(finalPath):
             shutil.copy(path, finalPath)
+
+        contentJSON = """
+{
+    "name": "%s",
+    "IMAP": {
+        "host": "localhost",
+        "port": 993,
+        "type": 1,
+        "timeout": 300,
+        "shortLogin": false,
+        "sasl": [
+            "SCRAM-SHA3-512",
+            "SCRAM-SHA-512",
+            "SCRAM-SHA-256",
+            "SCRAM-SHA-1",
+            "PLAIN",
+            "LOGIN"
+        ],
+        "ssl": {
+            "verify_peer": false,
+            "verify_peer_name": false,
+            "allow_self_signed": false,
+            "SNI_enabled": true,
+            "disable_compression": true,
+            "security_level": 1
+        },
+        "use_expunge_all_on_delete": false,
+        "fast_simple_search": true,
+        "force_select": false,
+        "message_all_headers": false,
+        "message_list_limit": 10000,
+        "search_filter": "",
+        "disabled_capabilities": []
+    },
+    "SMTP": {
+        "host": "localhost",
+        "port": 587,
+        "type": 2,
+        "timeout": 60,
+        "shortLogin": false,
+        "sasl": [
+            "SCRAM-SHA3-512",
+            "SCRAM-SHA-512",
+            "SCRAM-SHA-256",
+            "SCRAM-SHA-1",
+            "PLAIN",
+            "LOGIN"
+        ],
+        "ssl": {
+            "verify_peer": false,
+            "verify_peer_name": false,
+            "allow_self_signed": false,
+            "SNI_enabled": true,
+            "disable_compression": true,
+            "security_level": 1
+        },
+        "useAuth": true,
+        "setSender": false,
+        "usePhpMail": false,
+        "authPlainLine": false
+    },
+    "Sieve": {
+        "host": "",
+        "port": 4190,
+        "type": 0,
+        "timeout": 10,
+        "shortLogin": false,
+        "sasl": [
+            "SCRAM-SHA3-512",
+            "SCRAM-SHA-512",
+            "SCRAM-SHA-256",
+            "SCRAM-SHA-1",
+            "PLAIN",
+            "LOGIN"
+        ],
+        "ssl": {
+            "verify_peer": false,
+            "verify_peer_name": false,
+            "allow_self_signed": false,
+            "SNI_enabled": true,
+            "disable_compression": true,
+            "security_level": 1
+        },
+        "enabled": false
+    },
+    "whiteList": ""
+}
+""" % (domain)
+
+        WriteToFile = open(finalPathJson, 'w')
+        WriteToFile.write(contentJSON)
+        WriteToFile.close()
 
         command = 'chown -R lscpd:lscpd /usr/local/lscp/cyberpanel/rainloop/data/'
         ProcessUtilities.normalExecutioner(command)
@@ -314,6 +407,9 @@ class mailUtilities:
             command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.8/site-packages/tldextract/.suffix_cache'
             ProcessUtilities.executioner(command)
 
+            command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python*/site-packages/tldextract/.suffix_cache'
+            ProcessUtilities.executioner(command, None, True)
+
             import tldextract
 
             actualDomain = virtualHostName
@@ -353,27 +449,55 @@ class mailUtilities:
             keyTable = "/etc/opendkim/KeyTable"
             configToWrite = "default._domainkey." + actualDomain + " " + actualDomain + ":default:/etc/opendkim/keys/" + virtualHostName + "/default.private\n"
 
-            writeToFile = open(keyTable, 'a')
-            writeToFile.write(configToWrite)
-            writeToFile.close()
+            if not os.path.exists(keyTable):
+                writeToFile = open(keyTable, 'a')
+                writeToFile.write("##### CyberPanel Generated File - Do not edit if you don't know what you are doing.\n")
+                writeToFile.close()
+
+            data = open(keyTable, 'r').read()
+
+            if data.find("default._domainkey." + actualDomain) == -1:
+
+                writeToFile = open(keyTable, 'a')
+                writeToFile.write(configToWrite)
+                writeToFile.close()
 
             ## Edit signing table
 
             signingTable = "/etc/opendkim/SigningTable"
             configToWrite = "*@" + actualDomain + " default._domainkey." + actualDomain + "\n"
 
-            writeToFile = open(signingTable, 'a')
-            writeToFile.write(configToWrite)
-            writeToFile.close()
+            if not os.path.exists(signingTable):
+                writeToFile = open(signingTable, 'a')
+                writeToFile.write("##### CyberPanel Generated File - Do not edit if you don't know what you are doing.\n")
+                writeToFile.close()
+
+            data = open(signingTable, 'r').read()
+
+            if data.find("default._domainkey." + actualDomain) == -1:
+
+                writeToFile = open(signingTable, 'a')
+                writeToFile.write(configToWrite)
+                writeToFile.close()
 
             ## Trusted hosts
 
             trustedHosts = "/etc/opendkim/TrustedHosts"
             configToWrite = actualDomain + "\n"
 
-            writeToFile = open(trustedHosts, 'a')
-            writeToFile.write(configToWrite)
-            writeToFile.close()
+            if not os.path.exists(trustedHosts):
+
+                writeToFile = open(trustedHosts, 'a')
+                writeToFile.write("##### CyberPanel Generated File - Do not edit if you don't know what you are doing.\n")
+                writeToFile.close()
+
+            data = open(trustedHosts, 'r').read()
+
+            if data.find(actualDomain) == -1:
+
+                writeToFile = open(trustedHosts, 'a')
+                writeToFile.write(configToWrite)
+                writeToFile.close()
 
             ## Restart Postfix and OpenDKIM
 
@@ -633,13 +757,11 @@ milter_default_action = accept
 
                 command = 'sudo yum install rspamd clamav clamd clamav-update -y'
             else:
-                command = 'sudo apt-get install rspamd clamav clamav-daemon -y'
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get install rspamd clamav clamav-daemon -y'
 
-
-            cmd = shlex.split(command)
 
             with open(mailUtilities.RspamdInstallLogPath, 'w') as f:
-                res = subprocess.call(cmd, stdout=f)
+                res = subprocess.call(command, stdout=f, shell=True)
 
 
             ###### makefile
@@ -704,14 +826,33 @@ clamav {
             wirtedata.close()
 
 
+            ### disable dkim signing in rspamd in ref to https://github.com/usmannasir/cyberpanel/issues/1176
+
+            DKIMPath = '/etc/rspamd/local.d/dkim_signing.conf'
+
+            WriteToFile = open(DKIMPath, 'w')
+            WriteToFile.write('enabled = false;\n')
+            WriteToFile.close()
+
+
             appendpath = "/etc/postfix/main.cf"
-            appenddata = """
-smtpd_milters=inet:127.0.0.1:11332
-non_smtpd_milters=inet:127.0.0.1:11332
-"""
-            wirtedata1 = open(appendpath, 'a')
-            wirtedata1.writelines(appenddata)
-            wirtedata1.close()
+
+            lines = open(appendpath, 'r').readlines()
+
+            WriteToFile = open(appendpath, 'w')
+
+            for line in lines:
+                if line.find('inet:127.0.0.1:8891') > -1:
+                    cLine = line.rstrip('\n')
+                    content = f'{cLine}, inet:127.0.0.1:11332\n'
+                    WriteToFile.write('### Please do not edit this line, editing this line could break configurations\n')
+                    WriteToFile.write(content)
+                elif line.find('non_smtpd_milters') > -1:
+                    WriteToFile.write('non_smtpd_milters = $smtpd_milters\n')
+                else:
+                    WriteToFile.write(line)
+
+            WriteToFile.close()
 
 
             wpath = "/etc/rspamd/local.d/redis.conf"
@@ -1006,12 +1147,12 @@ LogFile /var/log/clamav/clamav.log
 
             writeDataToFile = open(postfixpath, "w")
             for i in data:
-                if i.find('smtpd_milters=') > -1 and i.find('non_smtpd_milters') < 0:
-                    newitem = 'smtpd_milters=%s' % smtpd_milters
+                if (i.find('smtpd_milters=') > -1 or i.find('smtpd_milters =') > -1) and i.find('non_smtpd_milters') < 0:
+                    newitem = f'smtpd_milters = inet:127.0.0.1:8891, {smtpd_milters}\n'
                     writeDataToFile.writelines(newitem + '\n')
-                elif i.find('non_smtpd_milters=') > -1:
-                    newitem = 'non_smtpd_milters=%s' % non_smtpd_milters
-                    writeDataToFile.writelines(newitem + '\n')
+                elif i.find('non_smtpd_milters=') > -1 or i.find('non_smtpd_milters =') > -1:
+                    #newitem = 'non_smtpd_milters=%s' % non_smtpd_milters
+                    writeDataToFile.writelines('non_smtpd_milters = $smtpd_milters\n')
                 else:
                     writeDataToFile.writelines(i + '\n')
 
@@ -1109,6 +1250,7 @@ LogFile /var/log/clamav/clamav.log
             str((msg) + " [changeclamavConfig]")
             print(0, str(msg))
             return [0, str(msg) + " [changeclamavConfig]"]
+
     @staticmethod
     def installMailScanner(install, SpamAssassin):
         try:
@@ -1371,6 +1513,29 @@ LogFile /var/log/clamav/clamav.log
                 str(msg) + "  [checkIfMailScannerInstalled]")
             return 0
 
+    @staticmethod
+    def FetchPostfixHostname():
+        PostfixPath = '/etc/postfix/main.cf'
+        if os.path.exists(PostfixPath):
+            PostFixConf = open(PostfixPath, 'r').readlines()
+
+            for line in PostFixConf:
+                if line.find('myhostname') > -1:
+                    hostname = line.split('=')[1].strip(' ').rstrip('\n')
+                    return hostname
+        else:
+            return 'localhost'
+
+    @staticmethod
+    def reverse_dns_lookup(ip_address):
+        try:
+            import socket
+            host_name, _, _ = socket.gethostbyaddr(ip_address)
+            return host_name
+        except socket.herror as e:
+            # Handle errors, e.g., if reverse DNS lookup fails
+            return None
+
     ####### Imported below functions from mailserver/mailservermanager, need to refactor later
 
 class MailServerManagerUtils(multi.Thread):
@@ -1399,6 +1564,10 @@ class MailServerManagerUtils(multi.Thread):
                 for items in postFixLines:
                     if items.find('myhostname') > -1 and items[0] != '#':
                         self.mailHostName = items.split('=')[1].strip(' ')
+
+                        if os.path.exists(ProcessUtilities.debugPath):
+                            logging.CyberCPLogFileWriter.writeToFile(f'Mail server SSL is issued with value: {self.mailHostName}')
+
                         self.MailSSL = 1
             except BaseException as msg:
                 self.MailSSL = 0
@@ -1865,7 +2034,7 @@ class MailServerManagerUtils(multi.Thread):
             command = "chmod 755 " + main
             ProcessUtilities.executioner(command)
 
-            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
+            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
                 command = "mkdir -p /etc/pki/dovecot/private/"
                 ProcessUtilities.executioner(command)
 
@@ -1880,7 +2049,7 @@ class MailServerManagerUtils(multi.Thread):
 
                 ## Ubuntu 18.10 ssl_dh for dovecot 2.3.2.1
 
-                if ProcessUtilities.ubuntu:
+                if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
                     dovecotConf = '/etc/dovecot/dovecot.conf'
 
                     data = open(dovecotConf, 'r').readlines()
@@ -2056,6 +2225,62 @@ class MailServerManagerUtils(multi.Thread):
 
         ###
 
+    def installOpenDKIMNew(self):
+        try:
+            logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
+                                                      'Installing opendkim..,40')
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+
+                command = 'yum -y erase opendkim*'
+                os.system(command)
+
+                command = 'yum -y install opendkim'
+            elif ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+
+                command = 'yum -y erase opendkim*'
+                os.system(command)
+
+                command = 'dnf install opendkim -y'
+            else:
+
+                command = 'apt-get -y purge opendkim'
+                os.system(command)
+
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install opendkim'
+
+            os.system(command)
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+                command = 'dnf install opendkim-tools -y'
+                ProcessUtilities.executioner(command)
+
+            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+                command = 'apt install opendkim-tools -y'
+                ProcessUtilities.executioner(command)
+
+                command = 'mkdir -p /etc/opendkim/keys/'
+                ProcessUtilities.executioner(command)
+
+
+        except BaseException as msg:
+            logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
+                                                      '%s [installOpenDKIM][404]' % (str(msg)), 10)
+            return 0
+
+        return 1
+
+    def SetupDKIMFromResetMail(self):
+        from plogical.dnsUtilities import DNS
+
+        for website in Websites.objects.all():
+            mailUtilities.setupDKIM(website.domain)
+            DNS.createDKIMRecords(website.domain)
+
+        for website in ChildDomains.objects.all():
+            mailUtilities.setupDKIM(website.domain)
+            DNS.createDKIMRecords(website.domain)
+
     def ResetEmailConfigurations(self):
         try:
             ### Check if remote or local mysql
@@ -2118,10 +2343,17 @@ class MailServerManagerUtils(multi.Thread):
             logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
                                                       'Restoring OpenDKIM configurations..,70')
 
+            if self.installOpenDKIMNew() == 0:
+                logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
+                                                          'Install OpenDKIM failed. [404].')
+                return 0
+
             if self.configureOpenDKIM() == 0:
                 logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
                                                           'configureOpenDKIM failed. [404].')
                 return 0
+
+            self.SetupDKIMFromResetMail()
 
             if self.MailSSL:
                 logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'],
@@ -2155,6 +2387,9 @@ class MailServerManagerUtils(multi.Thread):
             logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'], 'Fixing permissions..,90')
 
             self.fixCyberPanelPermissions()
+
+            command = 'touch /home/cyberpanel/postfix'
+            ProcessUtilities.executioner(command)
 
             logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'], 'Completed [200].')
 
@@ -2200,11 +2435,11 @@ milter_default_action = accept
             writeToFile.write(configData)
             writeToFile.close()
 
-            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
+            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20 or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
                 data = open(openDKIMConfigurePath, 'r').readlines()
                 writeToFile = open(openDKIMConfigurePath, 'w')
                 for items in data:
-                    if items.find('Socket') > -1 and items.find('local:') and items[0] != '#':
+                    if items.find('Socket') > -1 and items.find('local:') > -1:
                         writeToFile.writelines('Socket  inet:8891@localhost\n')
                     else:
                         writeToFile.writelines(items)

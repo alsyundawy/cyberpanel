@@ -4,6 +4,7 @@ import os, sys
 import shutil
 import time
 
+from ApachController.ApacheVhosts import ApacheVhost
 from loginSystem.models import Administrator
 from managePHP.phpManager import PHPManager
 from plogical.acl import ACLManager
@@ -31,7 +32,7 @@ class ApplicationInstaller(multi.Thread):
     LOCALHOST = 'localhost'
     REMOTE = 0
     PORT = '3306'
-    MauticVersion = '4.1.2'
+    MauticVersion = '4.4.9'
     PrestaVersion = '1.7.8.3'
 
     def __init__(self, installApp, extraArgs):
@@ -83,9 +84,34 @@ class ApplicationInstaller(multi.Thread):
                 self.WPCreateBackup()
             elif self.installApp == 'RestoreWPbackupNow':
                 self.RestoreWPbackupNow()
+            elif self.installApp == 'UpgradeCP':
+                self.UpgradeCP()
 
         except BaseException as msg:
             logging.writeToFile(str(msg) + ' [ApplicationInstaller.run]')
+
+    def UpgradeCP(self):
+        command = f'/usr/local/CyberPanel/bin/python /usr/local/CyberCP/plogical/upgrade.py "SoftUpgrade,{self.data["branchSelect"]}"'
+        ProcessUtilities.executioner(command)
+
+    def InstallNodeJS(self):
+
+        command = 'npm'
+        result = ProcessUtilities.outputExecutioner(command)
+        if result.find('npm <command>') > -1:
+            return 1
+
+        if ProcessUtilities.decideDistro() == ProcessUtilities.centos or ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
+            command = 'dnf module enable nodejs -y dnf install nodejs -y'
+            ProcessUtilities.executioner(command, 'root', True)
+        else:
+            #command = 'curl -fsSL <https://deb.nodesource.com/setup_20.x> | sudo -E bash -'
+            #ProcessUtilities.executioner(command, 'root', True)
+
+            command = 'DEBIAN_FRONTEND=noninteractive nodejs npm -y'
+            ProcessUtilities.executioner(command, 'root', True)
+
+        return 1
 
     def installMautic(self):
         try:
@@ -99,13 +125,34 @@ class ApplicationInstaller(multi.Thread):
             password = self.extraArgs['password']
             email = self.extraArgs['email']
 
-            FNULL = open(os.devnull, 'w')
-
             ## Open Status File
 
             statusFile = open(tempStatusPath, 'w')
             statusFile.writelines('Setting up paths,0')
             statusFile.close()
+
+            self.InstallNodeJS()
+
+
+            ### lets first find php path
+
+            from plogical.phpUtilities import phpUtilities
+
+            vhFile = f'/usr/local/lsws/conf/vhosts/{domainName}/vhost.conf'
+
+            phpPath = phpUtilities.GetPHPVersionFromFile(vhFile, domainName)
+
+            ### basically for now php 8.0 is being checked
+
+            if not os.path.exists(phpPath):
+                statusFile = open(tempStatusPath, 'w')
+                statusFile.writelines('PHP 8.1 missing installing now..,20')
+                statusFile.close()
+                phpUtilities.InstallSaidPHP('81')
+
+
+            FNULL = open(os.devnull, 'w')
+
 
             finalPath = ''
             self.permPath = ''
@@ -168,6 +215,13 @@ class ApplicationInstaller(multi.Thread):
                 command = 'mkdir -p ' + finalPath
                 ProcessUtilities.executioner(command, externalApp)
 
+            command = f'rm -rf {finalPath}*'
+            ProcessUtilities.executioner(command, externalApp)
+
+            command = f'rm -rf {finalPath}.*'
+            ProcessUtilities.executioner(command, externalApp)
+
+
             ## checking for directories/files
 
             if self.dataLossCheck(finalPath, tempStatusPath, externalApp) == 0:
@@ -179,16 +233,14 @@ class ApplicationInstaller(multi.Thread):
             statusFile.writelines('Downloading Mautic Core,30')
             statusFile.close()
 
-            command = "wget https://github.com/mautic/mautic/releases/download/%s/%s.zip" % (
-            ApplicationInstaller.MauticVersion, ApplicationInstaller.MauticVersion)
-            ProcessUtilities.outputExecutioner(command, externalApp, None, finalPath)
+            ### replace command with composer install
+            command = f'{phpPath} /usr/bin/composer create-project mautic/recommended-project:^5 {finalPath}'
+            ProcessUtilities.outputExecutioner(command, externalApp, None)
 
             statusFile = open(tempStatusPath, 'w')
             statusFile.writelines('Extracting Mautic Core,50')
             statusFile.close()
 
-            command = "unzip %s.zip" % (ApplicationInstaller.MauticVersion)
-            ProcessUtilities.outputExecutioner(command, externalApp, None, finalPath)
 
             ##
 
@@ -202,53 +254,56 @@ class ApplicationInstaller(multi.Thread):
             else:
                 finalURL = domainName
 
-            ACLManager.CreateSecureDir()
-            localDB = '%s/%s' % ('/usr/local/CyberCP/tmp', str(randint(1000, 9999)))
 
-            localDBContent = """<?php
-// Example local.php to test install (to adapt of course)
-$parameters = array(
-	// Do not set db_driver and mailer_from_name as they are used to assume Mautic is installed
-	'db_host' => 'localhost',
-	'db_table_prefix' => null,
-	'db_port' => 3306,
-	'db_name' => '%s',
-	'db_user' => '%s',
-	'db_password' => '%s',
-	'db_backup_tables' => true,
-	'db_backup_prefix' => 'bak_',
-	'admin_email' => '%s',
-	'admin_password' => '%s',
-	'mailer_transport' => null,
-	'mailer_host' => null,
-	'mailer_port' => null,
-	'mailer_user' => null,
-	'mailer_password' => null,
-	'mailer_api_key' => null,
-	'mailer_encryption' => null,
-	'mailer_auth_mode' => null,
-);""" % (dbName, dbUser, dbPassword, email, password)
+            command = f"{phpPath} -d memory_limit=256M bin/console mautic:install --db_host='localhost' --db_name='{dbName}' --db_user='{dbUser}' --db_password='{dbPassword}' --admin_username='{username}' --admin_email='{email}' --admin_password='{password}' --db_port='3306' http://{finalURL} -f"
 
-            writeToFile = open(localDB, 'w')
-            writeToFile.write(localDBContent)
-            writeToFile.close()
-
-            command = 'rm -rf %s/app/config/local.php' % (finalPath)
-            ProcessUtilities.executioner(command, externalApp)
-
-            command = 'chown %s:%s %s' % (externalApp, externalApp, localDB)
-            ProcessUtilities.executioner(command)
-
-            command = 'cp %s %s/app/config/local.php' % (localDB, finalPath)
-            ProcessUtilities.executioner(command, externalApp)
-
-            command = "/usr/local/lsws/lsphp74/bin/php bin/console mautic:install http://%s -f" % (finalURL)
             result = ProcessUtilities.outputExecutioner(command, externalApp, None, finalPath)
 
             if result.find('Install complete') == -1:
                 raise BaseException(result)
 
-            os.remove(localDB)
+
+            ExistingDocRoot = ACLManager.FindDocRootOfSite(None, domainName)
+
+            if ExistingDocRoot.find('docroot') > -1:
+                ExistingDocRoot = ExistingDocRoot.replace('docroot', '')
+
+
+            NewDocRoot = f'{ExistingDocRoot}/docroot'
+            ACLManager.ReplaceDocRoot(None, domainName, NewDocRoot)
+
+            if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+
+                try:
+
+                    ExistingDocRootApache = ACLManager.FindDocRootOfSiteApache(None, domainName)
+
+                    if ExistingDocRootApache.find('docroot') == -1:
+                        NewDocRootApache = f'{ExistingDocRootApache}docroot'
+                    else:
+                        NewDocRootApache = ExistingDocRootApache
+
+                    if ExistingDocRootApache != None:
+                        ACLManager.ReplaceDocRootApache(None, domainName, NewDocRootApache)
+                except:
+                    pass
+
+            ### fix incorrect rules in .htaccess of mautic
+
+            if ProcessUtilities.decideServer() == ProcessUtilities.ent:
+                htAccessPath = f'{finalPath}docroot/.htaccess'
+
+                command = f"sed -i '/# Fallback for Apache < 2.4/,/<\/IfModule>/d' {htAccessPath}"
+                ProcessUtilities.executioner(command, externalApp, True)
+
+                command = f"sed -i '/# Apache 2.4+/,/<\/IfModule>/d' {htAccessPath}"
+                ProcessUtilities.executioner(command, externalApp, True)
+
+
+            #os.remove(localDB)
+            command = f"systemctl restart {ApacheVhost.serviceName}"
+            ProcessUtilities.normalExecutioner(command)
+
             installUtilities.reStartLiteSpeedSocket()
 
             statusFile = open(tempStatusPath, 'w')
@@ -528,6 +583,39 @@ $parameters = array(
             statusFile.writelines('Setting up paths,0')
             statusFile.close()
 
+            #### Before installing wordpress change php to 8.0
+
+            from plogical.virtualHostUtilities import virtualHostUtilities
+
+            completePathToConfigFile = f'/usr/local/lsws/conf/vhosts/{domainName}/vhost.conf'
+
+            execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
+            execPath = execPath + " changePHP --phpVersion 'PHP 8.0' --path " + completePathToConfigFile
+            ProcessUtilities.executioner(execPath)
+
+            ### lets first find php path
+
+
+            from plogical.phpUtilities import phpUtilities
+
+            vhFile = f'/usr/local/lsws/conf/vhosts/{domainName}/vhost.conf'
+
+            try:
+
+                phpPath = phpUtilities.GetPHPVersionFromFile(vhFile)
+            except:
+                phpPath = '/usr/local/lsws/lsphp80/bin/php'
+
+
+            ### basically for now php 8.0 is being checked
+
+            if not os.path.exists(phpPath):
+                statusFile = open(tempStatusPath, 'w')
+                statusFile.writelines('PHP 8.0 missing installing now..,20')
+                statusFile.close()
+                phpUtilities.InstallSaidPHP('80')
+
+
             finalPath = ''
             self.permPath = ''
 
@@ -584,8 +672,8 @@ $parameters = array(
                 dbName, dbUser, dbPassword = self.dbCreation(tempStatusPath, website)
                 self.permPath = '/home/%s/public_html' % (website.domain)
 
-            php = PHPManager.getPHPString(website.phpSelection)
-            FinalPHPPath = '/usr/local/lsws/lsphp%s/bin/php' % (php)
+            #php = PHPManager.getPHPString(website.phpSelection)
+            FinalPHPPath = phpPath
 
             ## Security Check
 
@@ -1692,20 +1780,21 @@ $parameters = array(
 
             DataToPass['domainName'] = self.data['domainName']
             DataToPass['adminEmail'] = self.data['adminEmail']
-            DataToPass['phpSelection'] = "PHP 7.4"
+            DataToPass['phpSelection'] = "PHP 8.0"
             DataToPass['websiteOwner'] = self.data['websiteOwner']
             DataToPass['package'] = self.data['package']
             DataToPass['ssl'] = 1
-            DataToPass['dkimCheck'] = 0
+            DataToPass['dkimCheck'] = 1
             DataToPass['openBasedir'] = 0
-            DataToPass['mailDomain'] = 0
+            DataToPass['mailDomain'] = 1
+            DataToPass['apacheBackend'] = self.extraArgs['apacheBackend']
             UserID = self.data['adminID']
 
             try:
                 website = Websites.objects.get(domain=DataToPass['domainName'])
 
                 if website.phpSelection == 'PHP 7.3':
-                    website.phpSelection = 'PHP 7.4'
+                    website.phpSelection = 'PHP 8.0'
                     website.save()
 
                 if ACLManager.checkOwnership(website.domain, self.extraArgs['adminID'],
@@ -1722,7 +1811,8 @@ $parameters = array(
                 reutrntempath = coreResult1['tempStatusPath']
                 while (1):
                     lastLine = open(reutrntempath, 'r').read()
-                    logging.writeToFile("Error web creating lastline ....... %s" % lastLine)
+                    if os.path.exists(ProcessUtilities.debugPath):
+                        logging.writeToFile("Info web creating lastline ....... %s" % lastLine)
                     if lastLine.find('[200]') > -1:
                         break
                     elif lastLine.find('[404]') > -1:
@@ -1962,6 +2052,20 @@ $parameters = array(
 
             wpobj = WPSites.objects.get(pk=self.data['WPid'])
 
+            php = PHPManager.getPHPString(wpobj.owner.phpSelection)
+            FinalPHPPath = '/usr/local/lsws/lsphp%s/bin/php' % (php)
+
+
+
+            #get wp version
+            path_to_wordpress = wpobj.path
+            command = f"{FinalPHPPath} -d error_reporting=0 /usr/bin/wp --path='{path_to_wordpress}' core version --skip-plugins --skip-themes"
+            Wp_version = ProcessUtilities.outputExecutioner(command, wpobj.owner.externalApp)
+            old_wp_version = Wp_version.rstrip('\n')
+            logging.writeToFile("Old site wp version:%s"% old_wp_version)
+
+
+
             ### Create secure folder
             ACLManager.CreateSecureDir()
             tempPath = '%s/%s' % ('/usr/local/CyberCP/tmp', str(randint(1000, 9999)))
@@ -2048,7 +2152,7 @@ $parameters = array(
 
             StagingPath = f'/home/{website.domain}/public_html'
 
-            command = f'{FinalPHPPath} -d error_reporting=0 /usr/bin/wp core download --path={StagingPath}'
+            command = f'{FinalPHPPath} -d error_reporting=0 /usr/bin/wp core download --path={StagingPath} --version={old_wp_version}'
 
             if ProcessUtilities.executioner(command, website.externalApp) == 0:
                 raise BaseException('Failed to download wp core. [404]')

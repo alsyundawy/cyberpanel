@@ -15,7 +15,7 @@ from stat import *
 import stat
 
 VERSION = '2.3'
-BUILD = 4
+BUILD = 5
 
 char_set = {'small': 'abcdefghijklmnopqrstuvwxyz', 'nums': '0123456789', 'big': 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'}
 
@@ -34,6 +34,7 @@ centos = 0
 ubuntu = 1
 cent8 = 2
 openeuler = 3
+CloudLinux8 = 0
 
 
 def get_distro():
@@ -52,11 +53,14 @@ def get_distro():
 
         data = open('/etc/redhat-release', 'r').read()
 
+
         if data.find('CentOS Linux release 8') > -1:
             return cent8
         if data.find('AlmaLinux release 8') > -1:
             return cent8
         if data.find('Rocky Linux release 8') > -1 or data.find('Rocky Linux 8') > -1 or data.find('rocky:8') > -1:
+            return cent8
+        if data.find('CloudLinux 8') or data.find('cloudlinux 8'):
             return cent8
 
     else:
@@ -102,7 +106,7 @@ class preFlightsChecks:
     debug = 1
     cyberPanelMirror = "mirror.cyberpanel.net/pip"
     cdn = 'cyberpanel.sh'
-    SnappyVersion = '2.28.1'
+    SnappyVersion = '2.32.0'
 
     def __init__(self, rootPath, ip, path, cwd, cyberPanelPath, distro, remotemysql=None, mysqlhost=None, mysqldb=None,
                  mysqluser=None, mysqlpassword=None, mysqlport=None):
@@ -136,68 +140,70 @@ class preFlightsChecks:
 
     def mountTemp(self):
         try:
-            ## On OpenVZ there is an issue using .tempdisk for /tmp as it breaks network on container after reboot.
+            # ## On OpenVZ there is an issue using .tempdisk for /tmp as it breaks network on container after reboot.
+            #
+            # if subprocess.check_output('systemd-detect-virt').decode("utf-8").find("openvz") > -1:
+            #
+            #     varTmp = "/var/tmp /tmp none bind 0 0\n"
+            #
+            #     fstab = "/etc/fstab"
+            #     writeToFile = open(fstab, "a")
+            #     writeToFile.writelines(varTmp)
+            #     writeToFile.close()
+            #
+            # else:
+            #
+            #     command = "dd if=/dev/zero of=/usr/.tempdisk bs=100M count=15"
+            #     preFlightsChecks.call(command, self.distro, command,
+            #                           command,
+            #                           1, 0, os.EX_OSERR)
+            #
+            #     command = "mkfs.ext4 -F /usr/.tempdisk"
+            #     preFlightsChecks.call(command, self.distro, command,
+            #                           command,
+            #                           1, 0, os.EX_OSERR)
+            #
+            #     command = "mkdir -p /usr/.tmpbak/"
+            #     preFlightsChecks.call(command, self.distro, command,
+            #                           command,
+            #                           1, 0, os.EX_OSERR)
+            #
+            #     command = "cp -pr /tmp/* /usr/.tmpbak/"
+            #     subprocess.call(command, shell=True)
+            #
+            #     command = "mount -o loop,rw,nodev,nosuid,noexec,nofail /usr/.tempdisk /tmp"
+            #     preFlightsChecks.call(command, self.distro, command,
+            #                           command,
+            #                           1, 0, os.EX_OSERR)
+            #
+            #     command = "chmod 1777 /tmp"
+            #     preFlightsChecks.call(command, self.distro, command,
+            #                           command,
+            #                           1, 0, os.EX_OSERR)
+            #
+            #     command = "cp -pr /usr/.tmpbak/* /tmp/"
+            #     subprocess.call(command, shell=True)
+            #
+            #     command = "rm -rf /usr/.tmpbak"
+            #     preFlightsChecks.call(command, self.distro, command,
+            #                           command,
+            #                           1, 0, os.EX_OSERR)
+            #
+            #     command = "mount --bind /tmp /var/tmp"
+            #     preFlightsChecks.call(command, self.distro, command,
+            #                           command,
+            #                           1, 0, os.EX_OSERR)
+            #
+            #     tmp = "/usr/.tempdisk /tmp ext4 loop,rw,noexec,nosuid,nodev,nofail 0 0\n"
+            #     varTmp = "/tmp /var/tmp none bind 0 0\n"
+            #
+            #     fstab = "/etc/fstab"
+            #     writeToFile = open(fstab, "a")
+            #     writeToFile.writelines(tmp)
+            #     writeToFile.writelines(varTmp)
+            #     writeToFile.close()
 
-            if subprocess.check_output('systemd-detect-virt').decode("utf-8").find("openvz") > -1:
-
-                varTmp = "/var/tmp /tmp none bind 0 0\n"
-
-                fstab = "/etc/fstab"
-                writeToFile = open(fstab, "a")
-                writeToFile.writelines(varTmp)
-                writeToFile.close()
-
-            else:
-
-                command = "dd if=/dev/zero of=/usr/.tempdisk bs=100M count=15"
-                preFlightsChecks.call(command, self.distro, command,
-                                      command,
-                                      1, 0, os.EX_OSERR)
-
-                command = "mkfs.ext4 -F /usr/.tempdisk"
-                preFlightsChecks.call(command, self.distro, command,
-                                      command,
-                                      1, 0, os.EX_OSERR)
-
-                command = "mkdir -p /usr/.tmpbak/"
-                preFlightsChecks.call(command, self.distro, command,
-                                      command,
-                                      1, 0, os.EX_OSERR)
-
-                command = "cp -pr /tmp/* /usr/.tmpbak/"
-                subprocess.call(command, shell=True)
-
-                command = "mount -o loop,rw,nodev,nosuid,noexec,nofail /usr/.tempdisk /tmp"
-                preFlightsChecks.call(command, self.distro, command,
-                                      command,
-                                      1, 0, os.EX_OSERR)
-
-                command = "chmod 1777 /tmp"
-                preFlightsChecks.call(command, self.distro, command,
-                                      command,
-                                      1, 0, os.EX_OSERR)
-
-                command = "cp -pr /usr/.tmpbak/* /tmp/"
-                subprocess.call(command, shell=True)
-
-                command = "rm -rf /usr/.tmpbak"
-                preFlightsChecks.call(command, self.distro, command,
-                                      command,
-                                      1, 0, os.EX_OSERR)
-
-                command = "mount --bind /tmp /var/tmp"
-                preFlightsChecks.call(command, self.distro, command,
-                                      command,
-                                      1, 0, os.EX_OSERR)
-
-                tmp = "/usr/.tempdisk /tmp ext4 loop,rw,noexec,nosuid,nodev,nofail 0 0\n"
-                varTmp = "/tmp /var/tmp none bind 0 0\n"
-
-                fstab = "/etc/fstab"
-                writeToFile = open(fstab, "a")
-                writeToFile.writelines(tmp)
-                writeToFile.writelines(varTmp)
-                writeToFile.close()
+            pass
 
         except BaseException as msg:
             preFlightsChecks.stdOut('[ERROR] ' + str(msg))
@@ -1403,7 +1409,7 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             command = f'wget -O /usr/local/CyberCP/snappymail_cyberpanel.php  https://raw.githubusercontent.com/the-djmaze/snappymail/master/integrations/cyberpanel/install.php'
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-            command = f'/usr/local/lsws/lsphp74/bin/php /usr/local/CyberCP/snappymail_cyberpanel.php'
+            command = f'/usr/local/lsws/lsphp80/bin/php /usr/local/CyberCP/snappymail_cyberpanel.php'
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
 
@@ -1602,7 +1608,7 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
 
             try:
                 os.remove("/usr/local/lscp/fcgi-bin/lsphp")
-                shutil.copy("/usr/local/lsws/lsphp74/bin/lsphp", "/usr/local/lscp/fcgi-bin/lsphp")
+                shutil.copy("/usr/local/lsws/lsphp80/bin/lsphp", "/usr/local/lscp/fcgi-bin/lsphp")
             except:
                 pass
 
@@ -1872,7 +1878,7 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
 0 * * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/postfixSenderPolicy/client.py hourlyCleanup >/dev/null 2>&1
 0 0 1 * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/postfixSenderPolicy/client.py monthlyCleanup >/dev/null 2>&1
 0 2 * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/upgradeCritical.py >/dev/null 2>&1
-0 2 * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/renew.py >/dev/null 2>&1
+0 0 * * 4 /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/renew.py >/dev/null 2>&1
 7 0 * * * "/root/.acme.sh"/acme.sh --cron --home "/root/.acme.sh" > /dev/null
 0 0 * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/IncBackups/IncScheduler.py Daily
 0 0 * * 0 /usr/local/CyberCP/bin/python /usr/local/CyberCP/IncBackups/IncScheduler.py Weekly
@@ -2054,11 +2060,11 @@ milter_default_action = accept
             writeToFile.write(configData)
             writeToFile.close()
 
-            if self.distro == ubuntu:
+            if self.distro == ubuntu or self.distro == cent8:
                 data = open(openDKIMConfigurePath, 'r').readlines()
                 writeToFile = open(openDKIMConfigurePath, 'w')
                 for items in data:
-                    if items.find('Socket') > -1 and items.find('local:') and items[0] != '#':
+                    if items.find('Socket') > -1 and items.find('local:'):
                         writeToFile.writelines('Socket  inet:8891@localhost\n')
                     else:
                         writeToFile.writelines(items)

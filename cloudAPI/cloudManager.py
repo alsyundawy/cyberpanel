@@ -344,6 +344,16 @@ class CloudManager:
     def statusFunc(self):
         try:
             statusFile = self.data['statusFile']
+
+            if ACLManager.CheckStatusFilleLoc(statusFile):
+                pass
+            else:
+                data_ret = {'abort': 1, 'installStatus': 0, 'installationProgress': "100",
+                            'currentStatus': 'Invalid status file.'}
+                json_data = json.dumps(data_ret)
+                return HttpResponse(json_data)
+
+
             statusData = open(statusFile, 'r').readlines()
             try:
                 lastLine = statusData[-1]
@@ -1070,11 +1080,11 @@ class CloudManager:
 
     def fetchRam(self, request):
         try:
-            request.session['userID'] = self.admin.pk
-            currentACL = ACLManager.loadedACL(self.admin.pk)
-
-            if currentACL['admin'] == 0:
-                return self.ajaxPre(0, 'Only administrators can see MySQL status.')
+            # request.session['userID'] = self.admin.pk
+            # currentACL = ACLManager.loadedACL(self.admin.pk)
+            #
+            # if currentACL['admin'] == 0:
+            #     return self.ajaxPre(0, 'Only administrators can see MySQL status.')
 
             # if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
             #    return self.ajaxPre(0, 'This feature is currently only available on CentOS.')
@@ -2832,6 +2842,9 @@ class CloudManager:
             command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.8/site-packages/tldextract/.suffix_cache'
             ProcessUtilities.executioner(command)
 
+            command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python*/site-packages/tldextract/.suffix_cache'
+            ProcessUtilities.executioner(command, None, True)
+
             ##
 
             ipFile = "/etc/cyberpanel/machineIP"
@@ -2851,6 +2864,9 @@ class CloudManager:
 
             command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.8/site-packages/tldextract/.suffix_cache'
             ProcessUtilities.executioner(command)
+
+            command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python*/site-packages/tldextract/.suffix_cache'
+            ProcessUtilities.executioner(command, None, True)
 
             for website in Websites.objects.all():
                 import tldextract
@@ -2896,6 +2912,9 @@ class CloudManager:
 
             command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.8/site-packages/tldextract/.suffix_cache'
             ProcessUtilities.executioner(command)
+
+            command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python*/site-packages/tldextract/.suffix_cache'
+            ProcessUtilities.executioner(command, None, True)
 
             from websiteFunctions.models import ChildDomains
             for website in ChildDomains.objects.all():

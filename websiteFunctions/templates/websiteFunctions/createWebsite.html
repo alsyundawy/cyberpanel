@@ -119,6 +119,8 @@
                             </div>
                         </div>
 
+
+
                         <div ng-hide="installationDetailsForm" class="form-group">
                             <label class="col-sm-3 control-label">{% trans "Select Owner" %}</label>
                             <div class="col-sm-6">
@@ -129,6 +131,7 @@
                                 </select>
                             </div>
                         </div>
+
 
                         <div ng-hide="installationDetailsForm" class="form-group">
                             <label class="col-sm-3 control-label">{% trans "Domain Name" %}</label>
@@ -174,8 +177,16 @@
                             <div class="col-sm-9">
                                 <div class="checkbox">
                                     <label>
-                                        <input ng-model="apacheBackend" type="checkbox" value="">
-                                        Apache as Reverse Proxy (Beta, for Ubuntu 22 and AlmaLinux 8)
+                                        {% if test_domain_data %}
+                                            <input ng-model="apacheBackend" type="checkbox" value="">
+                                            OpenLiteSpeed + Apache (Backend) (For Ubuntu 22 and AlmaLinux 8)
+                                        {% else %}
+
+                                            <input ng-model="apacheBackend" type="checkbox" value="" disabled>
+                                            OpenLiteSpeed + Apache (Backend) (For Ubuntu 22 and AlmaLinux 8) -
+                                            <strong><a href="https://go.cyberpanel.net/ApacheRev">Premium Feature</a> <i
+                                                    class="p fa fa-external-link btn-icon"> </i></strong>
+                                        {% endif %}
                                     </label>
                                 </div>
                             </div>

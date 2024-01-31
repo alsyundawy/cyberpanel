@@ -1,6 +1,6 @@
 {% extends "baseTemplate/index.html" %}
 {% load i18n %}
-{% block title %}{% trans "Create New Domain - CyberPanel" %}{% endblock %}
+{% block title %}{% trans "Create Sub/Addon Domain - CyberPanel" %}{% endblock %}
 {% block content %}
 
     {% load static %}
@@ -93,8 +93,8 @@
 
     <div class="container">
         <div id="page-title">
-            <h2>{% trans "Create Child Domain" %}</h2>
-            <p>{% trans "Create child-domains, child domains are owned by a master website. " %}</p>
+            <h2>{% trans "Create Sub/Addon Domain" %}</h2>
+            <p>{% trans "Create Sub/Addon domains. " %}</p>
         </div>
 
 
@@ -184,8 +184,15 @@
                             <div class="col-sm-9">
                                 <div class="checkbox">
                                     <label>
-                                        <input ng-model="apacheBackend" type="checkbox" value="">
-                                        Apache as Reverse Proxy (Beta, for Ubuntu 22 and AlmaLinux 8)
+                                        {% if test_domain_data %}
+                                            <input ng-model="apacheBackend" type="checkbox" value="">
+                                            Apache as Reverse Proxy (Beta, for Ubuntu 22 and AlmaLinux 8)
+                                        {% else %}
+                                            <input ng-model="apacheBackend" type="checkbox" value="" disabled>
+                                            OpenLiteSpeed + Apache (Backend) (For Ubuntu 22 and AlmaLinux 8) -
+                                            <strong><a href="https://go.cyberpanel.net/ApacheRev">Premium Feature</a> <i
+                                                    class="p fa fa-external-link btn-icon"> </i></strong>
+                                        {% endif %}
                                     </label>
                                 </div>
                             </div>

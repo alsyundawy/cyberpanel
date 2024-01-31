@@ -422,11 +422,17 @@ def remoteTransfer(request):
 
             ipAddress = data['ipAddress']
             accountsToTransfer = data['accountsToTransfer']
-
+            port = data['port']
+            logging.writeToFile('port on server B-------------- %s' % str(port))
             if hashPassword.check_password(admin.password, password):
                 dir = str(randint(1000, 9999))
 
-                ##
+                ##save this port into file
+                portpath = "/home/cyberpanel/remote_port"
+                writeToFile = open(portpath, 'w')
+                writeToFile.writelines(port)
+                writeToFile.close()
+
 
                 mailUtilities.checkHome()
                 path = "/home/cyberpanel/accounts-" + str(randint(1000, 9999))
@@ -529,10 +535,10 @@ def FetchRemoteTransferStatus(request):
             dir = "/home/backup/transfer-"+str(data['dir'])+"/backup_log"
 
             try:
-                command = f"cat {dir}"
-                status = ProcessUtilities.outputExecutioner(command)
 
                 if hashPassword.check_password(admin.password, password):
+                    command = f"cat {dir}"
+                    status = ProcessUtilities.outputExecutioner(command)
 
                     final_json = json.dumps({'fetchStatus': 1, 'error_message': "None", "status": status})
                     return HttpResponse(final_json)

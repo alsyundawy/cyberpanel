@@ -108,6 +108,26 @@ class CageFS:
             writeToFile.write('CLInstalled')
             writeToFile.close()
 
+
+
+            #### mount session save paths
+
+            if os.path.exists('/etc/cagefs/cagefs.mp'):
+
+                from managePHP.phpManager import PHPManager
+                php_versions = PHPManager.findPHPVersions()
+
+                for php in php_versions:
+                    PHPVers = PHPManager.getPHPString(php)
+                    line = f'@/var/lib/lsphp/session/lsphp{PHPVers},700\n'
+
+                    WriteToFile = open('/etc/cagefs/cagefs.mp', 'a')
+                    WriteToFile.write(line)
+                    WriteToFile.close()
+
+                command = 'cagefsctl --remount-all'
+                ServerStatusUtil.executioner(command, statusFile)
+
             logging.CyberCPLogFileWriter.statusWriter(ServerStatusUtil.lswsInstallStatusPath,
                                                       "Packages successfully installed.[200]\n", 1)
 
@@ -164,6 +184,11 @@ pattern_to_watch = ^/home/.+?/(public_html|public_ftp|private_html)(/.*)?$
 
             ##
 
+            ### address issue to create imunify dir - https://app.clickup.com/t/86engx249
+
+            command = 'mkdir /usr/local/CyberCP/public/imunify'
+            ProcessUtilities.executioner(command)
+
             command = 'pkill -f "bash i360deploy.sh"'
             ServerStatusUtil.executioner(command, statusFile)
 
@@ -217,6 +242,11 @@ ui_path_owner = lscpd:lscpd
             writeToFile.close()
 
             ##
+
+            ### address issue to create imunify dir - https://app.clickup.com/t/86engx249
+
+            command = 'mkdir /usr/local/CyberCP/public/imunifyav'
+            ProcessUtilities.executioner(command)
 
             command = 'pkill -f "bash imav-deploy.sh"'
             ServerStatusUtil.executioner(command, statusFile)

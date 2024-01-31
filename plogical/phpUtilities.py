@@ -9,6 +9,7 @@ import argparse
 import os
 from plogical.mailUtilities import mailUtilities
 from plogical.processUtilities import ProcessUtilities
+from ApachController.ApacheVhosts import ApacheVhost
 
 import json
 from django.urls import reverse
@@ -191,7 +192,6 @@ class phpUtilities:
                 str(msg) + " [savePHPConfigAdvance]")
             print("0,"+str(msg))
 
-
     @staticmethod
     def GetStagingInJson(stagings):
         try:
@@ -216,6 +216,96 @@ class phpUtilities:
             return json_data
         except BaseException as msg:
             return msg
+
+    @staticmethod
+    def GetPHPVersionFromFile(vhFile, domainName=None):
+
+        if domainName == None:
+            # Your file path
+            file_path = "/usr/local/lsws/conf/vhosts/mautic.wpmautic.net/vhost.conf"
+
+            # Split the path by '/'
+            path_parts = file_path.split('/')
+
+            # Find the index of 'vhosts' in the path
+            vhosts_index = path_parts.index('vhosts')
+
+            # Extract the domain
+            domainName = path_parts[vhosts_index + 1]
+
+        finalConfPath = ApacheVhost.configBasePath + domainName + '.conf'
+        if os.path.exists(finalConfPath):
+            command = f'grep -Eo -m 1 "php[0-9]+" {finalConfPath} | sed -n "1p"'
+            result = ProcessUtilities.outputExecutioner(command, None, True).rstrip('\n')
+            result = f'/usr/local/lsws/ls{result}/bin/lsphp'
+            result = result.rsplit("lsphp", 1)[0] + "php"
+            return result
+
+        if os.path.exists('/usr/local/CyberCP/debug'):
+            logging.CyberCPLogFileWriter.writeToFile(f'VHFile in GetPHPVersion {vhFile}')
+
+        if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+            command = f'grep -Eo "/usr/local/lsws/lsphp[0-9]+/bin/lsphp" {vhFile}'
+            result = ProcessUtilities.outputExecutioner(command, None, True).rstrip('\n')
+
+            result = result.rsplit("lsphp", 1)[0] + "php"
+            return result
+
+        else:
+            command = f'grep -Po "php\d+" {vhFile} | head -n 1'
+            result = ProcessUtilities.outputExecutioner(command, None, True).rstrip('\n')
+            result = f'/usr/local/lsws/ls{result}/bin/lsphp'
+            result = result.rsplit("lsphp", 1)[0] + "php"
+            return result
+
+    ## returns something like PHP 8.2
+    @staticmethod
+    def WrapGetPHPVersionFromFileToGetVersionWithPHP(vhFile):
+        result = phpUtilities.GetPHPVersionFromFile(vhFile)
+
+        if os.path.exists(ProcessUtilities.debugPath):
+            logging.CyberCPLogFileWriter.writeToFile(result)
+
+        command = result + " -v | awk '/^PHP/ {print $2}'"
+        php_version = ProcessUtilities.outputExecutioner(command, None, True).rstrip('\n')
+        return f"PHP {php_version}"
+
+    @staticmethod
+    def FindIfSaidPHPIsAvaiableOtherwiseMaketheNextOneAvailableToUse(vhFile, phpVersion):
+        if vhFile != None:
+            result = phpUtilities.GetPHPVersionFromFile(vhFile)
+
+            if os.path.exists(result):
+                return phpVersion
+            else:
+                from managePHP.phpManager import PHPManager
+                return PHPManager.findPHPVersions()[-2]
+        else:
+            from managePHP.phpManager import PHPManager
+            php = PHPManager.getPHPString(phpVersion)
+            finalPath = f'/usr/local/lsws/lsphp{php}/bin/php'
+            if os.path.exists(finalPath):
+                return phpVersion
+            else:
+                from managePHP.phpManager import PHPManager
+                return PHPManager.findPHPVersions()[-2]
+
+
+
+
+    @staticmethod
+    def InstallSaidPHP(php):
+        if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu or  ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu20:
+            command = f'DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp{php}*'
+        else:
+            command = f'dnf install lsphp{php}* --exclude lsphp73-pecl-zip --exclude *imagick* -y --skip-broken'
+
+
+        ProcessUtilities.executioner(command, None, True)
+
+
+
+
 
 
 
