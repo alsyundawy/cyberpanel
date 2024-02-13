@@ -64,7 +64,10 @@ class virtualHostUtilities:
 
         logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Setting up hostname,10')
         admin = Administrator.objects.get(pk=1)
-        config = json.loads(admin.config)
+        try:
+            config = json.loads(admin.config)
+        except:
+            config = {}
 
         ### probably need to add temporary dns resolver nameserver here - pending
 
@@ -72,6 +75,13 @@ class virtualHostUtilities:
             CurrentHostName = config['hostname']
         except:
             CurrentHostName = ''
+
+        if not skipRDNSCheck:
+            if not os.path.exists('/home/cyberpanel/postfix'):
+                message = 'This server does not come with postfix installed. [404]'
+                print(message)
+                logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, message)
+                logging.CyberCPLogFileWriter.writeToFile(message)
 
 
         ####
@@ -158,46 +168,50 @@ class virtualHostUtilities:
             ### create site if not there
 
             try:
+
                 website = Websites.objects.get(domain=Domain)
             except:
-                DataToPass = {}
+                try:
+                    child = ChildDomains.objects.get(domain=Domain)
+                except:
+                    DataToPass = {}
 
-                currentTemp = tempStatusPath
+                    currentTemp = tempStatusPath
 
-                DataToPass['domainName'] = Domain
-                DataToPass['adminEmail'] = admin.email
-                DataToPass['phpSelection'] = "PHP 8.0"
-                DataToPass['websiteOwner'] = "admin"
-                DataToPass['package'] = "Default"
-                DataToPass['ssl'] = 1
-                DataToPass['dkimCheck'] = 1
-                DataToPass['openBasedir'] = 0
-                DataToPass['mailDomain'] = 1
-                DataToPass['apacheBackend'] = 0
-                UserID = admin.pk
+                    DataToPass['domainName'] = Domain
+                    DataToPass['adminEmail'] = admin.email
+                    DataToPass['phpSelection'] = "PHP 8.0"
+                    DataToPass['websiteOwner'] = "admin"
+                    DataToPass['package'] = "Default"
+                    DataToPass['ssl'] = 1
+                    DataToPass['dkimCheck'] = 1
+                    DataToPass['openBasedir'] = 0
+                    DataToPass['mailDomain'] = 0
+                    DataToPass['apacheBackend'] = 0
+                    UserID = admin.pk
 
-                from websiteFunctions.website import WebsiteManager
-                ab = WebsiteManager()
-                coreResult = ab.submitWebsiteCreation(admin.id, DataToPass)
-                coreResult1 = json.loads((coreResult).content)
-                logging.CyberCPLogFileWriter.writeToFile("Creating website result....%s" % coreResult1)
-                reutrntempath = coreResult1['tempStatusPath']
-                while (1):
-                    lastLine = open(reutrntempath, 'r').read()
-                    if os.path.exists(ProcessUtilities.debugPath):
-                        logging.CyberCPLogFileWriter.writeToFile("Info web creating lastline ....... %s" % lastLine)
-                    if lastLine.find('[200]') > -1:
-                        break
-                    elif lastLine.find('[404]') > -1:
-                        statusFile = open(currentTemp, 'w')
-                        statusFile.writelines('Failed to Create Website: error: %s. [404]' % lastLine)
-                        statusFile.close()
-                        return 0
-                    else:
-                        statusFile = open(currentTemp, 'w')
-                        statusFile.writelines('Creating Website....,20')
-                        statusFile.close()
-                        time.sleep(2)
+                    from websiteFunctions.website import WebsiteManager
+                    ab = WebsiteManager()
+                    coreResult = ab.submitWebsiteCreation(admin.id, DataToPass)
+                    coreResult1 = json.loads((coreResult).content)
+                    logging.CyberCPLogFileWriter.writeToFile("Creating website result....%s" % coreResult1)
+                    reutrntempath = coreResult1['tempStatusPath']
+                    while (1):
+                        lastLine = open(reutrntempath, 'r').read()
+                        if os.path.exists(ProcessUtilities.debugPath):
+                            logging.CyberCPLogFileWriter.writeToFile("Info web creating lastline ....... %s" % lastLine)
+                        if lastLine.find('[200]') > -1:
+                            break
+                        elif lastLine.find('[404]') > -1:
+                            statusFile = open(currentTemp, 'w')
+                            statusFile.writelines('Failed to Create Website: error: %s. [404]' % lastLine)
+                            statusFile.close()
+                            return 0
+                        else:
+                            statusFile = open(currentTemp, 'w')
+                            statusFile.writelines('Creating Website....,20')
+                            statusFile.close()
+                            time.sleep(2)
 
             ### Case 2 where postfix hostname either does not exist or does not match with server hostname or
             ### hostname does not exists at all
@@ -243,7 +257,7 @@ class virtualHostUtilities:
             SSLProvider = x509.get_issuer().get_components()[1][1].decode('utf-8')
 
             if SSLProvider == 'Denial':
-                message = 'Failed to issue Hostname SSL, either its DNS record is not propagated or the domain is behind Cloudflare. [404]'
+                message = 'Failed to issue Hostname SSL, either its DNS record is not propagated or the domain is behind Cloudflare. If DNS is already propagated you might have reached Lets Encrypt limit, please wait before trying again.. [404]'
                 logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, message)
                 logging.CyberCPLogFileWriter.writeToFile(message)
                 config['hostname'] = Domain
@@ -1229,7 +1243,7 @@ class virtualHostUtilities:
 
     @staticmethod
     def createDomain(masterDomain, virtualHostName, phpVersion, path, ssl, dkimCheck, openBasedir, owner, apache,
-                     tempStatusPath='/home/cyberpanel/fakePath', LimitsCheck=1):
+                     tempStatusPath='/home/cyberpanel/fakePath', LimitsCheck=1, alias = 0):
         try:
 
             logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Running some checks..,0')
@@ -1322,7 +1336,7 @@ class virtualHostUtilities:
 
             if LimitsCheck:
                 website = ChildDomains(master=master, domain=virtualHostName, path=path, phpSelection=phpVersion,
-                                       ssl=ssl)
+                                       ssl=ssl, alais=alias)
                 website.save()
 
             if ssl == 1:
@@ -1838,9 +1852,14 @@ def main():
         except:
             tempStatusPath = '/home/cyberpanel/fakePath'
 
+        try:
+            aliasDomain = int(args.aliasDomain)
+        except:
+            aliasDomain = 0
+
         virtualHostUtilities.createDomain(args.masterDomain, args.virtualHostName, args.phpVersion, args.path,
                                           int(args.ssl), dkimCheck, openBasedir, args.websiteOwner, apache,
-                                          tempStatusPath)
+                                          tempStatusPath, 1, aliasDomain)
     elif args.function == "issueSSL":
         virtualHostUtilities.issueSSL(args.virtualHostName, args.path, args.administratorEmail)
     elif args.function == "issueSSLv2":

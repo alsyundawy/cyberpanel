@@ -1,6 +1,8 @@
 import os
 import sys
 
+import paramiko
+
 sys.path.append('/usr/local/CyberCP')
 import django
 
@@ -9,7 +11,7 @@ try:
     django.setup()
 except:
     pass
-
+import pysftp
 from plogical.randomPassword import generate_pass
 import pexpect
 from plogical import CyberCPLogFileWriter as logging
@@ -97,6 +99,11 @@ class backupUtilities:
 
             child = SubElement(metaFileXML, 'BUILD')
             child.text = str(BUILD)
+
+            ### try to take care of - https://github.com/usmannasir/cyberpanel/issues/1196
+
+            child = SubElement(metaFileXML, 'BackupWholeDir')
+            child.text = str(1)
 
             child = SubElement(metaFileXML, 'masterDomain')
             child.text = backupDomain
@@ -370,7 +377,9 @@ class backupUtilities:
             from shutil import copytree
 
             #copytree('/home/%s/public_html' % domainName, '%s/%s' % (tempStoragePath, 'public_html'))
-            command = f'cp -R /home/{domainName}/public_html {tempStoragePath}/public_html'
+            #command = f'cp -R /home/{domainName}/public_html {tempStoragePath}/public_html'
+            ### doing backup of whole dir and keeping it in public_html folder will restore from here - ref https://github.com/usmannasir/cyberpanel/issues/1196
+            command = f"rsync -av --exclude=.wp-cli --exclude=logs --exclude=backup --exclude=lscache /home/{domainName}/ {tempStoragePath}/public_html/"
 
             if ProcessUtilities.normalExecutioner(command) == 0:
                  raise BaseException(f'Failed to run cp command during backup generation.')
@@ -498,12 +507,12 @@ class backupUtilities:
                         #make_archive(os.path.join(tempStoragePath, "sslData-" + domainName), 'gztar', sslStoragePath)
                     except:
                         pass
+                ## no need to do this as on line 380 whole dir will be backuped up
 
-                if childPath.find(f'/home/{domainName}/public_html') == -1:
-                    # copy_tree(childPath, '%s/%s-docroot' % (tempStoragePath, actualChildDomain))
-                    command = f'cp -R {childPath} {tempStoragePath}/{actualChildDomain}-docroot'
-                    ProcessUtilities.executioner(command, externalApp)
-
+                # if childPath.find(f'/home/{domainName}/public_html') == -1:
+                #     # copy_tree(childPath, '%s/%s-docroot' % (tempStoragePath, actualChildDomain))
+                #     command = f'cp -R {childPath} {tempStoragePath}/{actualChildDomain}-docroot'
+                #     ProcessUtilities.executioner(command, externalApp)
         except BaseException as msg:
             pass
 
@@ -811,6 +820,11 @@ class backupUtilities:
             except:
                 twoPointO = 0
 
+            try:
+                BackupWholeDir = int(backupMetaData.find('BackupWholeDir').text)
+            except:
+                BackupWholeDir = 0
+
             result = backupUtilities.createWebsiteFromBackup(backupName, dir)
 
             if result[0] == 1:
@@ -917,17 +931,19 @@ class backupUtilities:
                         if float(version) > 2.0 or float(build) > 0:
                             if path.find('/home/%s/public_html' % masterDomain) == -1:
 
-                                #copy_tree('%s/%s-docroot' % (completPath, domain), path)
+                                if BackupWholeDir == 0:
 
-                                ## First remove if already exists
+                                    #copy_tree('%s/%s-docroot' % (completPath, domain), path)
 
-                                command = 'rm -rf %s' % (path)
-                                ProcessUtilities.executioner(command)
+                                    ## First remove if already exists
 
-                                ##
+                                    command = 'rm -rf %s' % (path)
+                                    ProcessUtilities.executioner(command)
 
-                                command = 'cp -R %s/%s-docroot %s' % (completPath, domain, path)
-                                ProcessUtilities.executioner(command)
+                                    ##
+
+                                    command = 'cp -R %s/%s-docroot %s' % (completPath, domain, path)
+                                    ProcessUtilities.executioner(command)
 
                         continue
                     else:
@@ -1053,8 +1069,11 @@ class backupUtilities:
                     ProcessUtilities.executioner(command)
 
                     ##
-
-                    command = 'cp -R %s/public_html %s' % (completPath, websiteHome)
+                    if BackupWholeDir:
+                        #command = 'cp -R %s/public_html/* %s/*' % (completPath, websiteHome)
+                        command = f'rsync -av {completPath}/public_html/ /home/{masterDomain}'
+                    else:
+                        command = 'cp -R %s/public_html %s' % (completPath, websiteHome)
                     ProcessUtilities.executioner(command)
 
             ## extracting email accounts
@@ -1107,7 +1126,6 @@ class backupUtilities:
 
             logging.CyberCPLogFileWriter.statusWriter(status, "Done")
 
-            installUtilities.reStartLiteSpeed()
 
             ## Fix permissions
 
@@ -1115,6 +1133,8 @@ class backupUtilities:
 
             fm = FileManager(None, None)
             fm.fixPermissions(masterDomain)
+
+            installUtilities.reStartLiteSpeed()
 
         except BaseException as msg:
             status = os.path.join(completPath, 'status')
@@ -1129,143 +1149,223 @@ class backupUtilities:
         except BaseException as msg:
             logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [initiateRestore]")
 
+    # @staticmethod
+    # def sendKey(IPAddress, password, port='22', user='root'):
+    #     try:
+    #
+    #         expectation = []
+    #         expectation.append("password:")
+    #         expectation.append("Password:")
+    #         expectation.append("Permission denied")
+    #         expectation.append("100%")
+    #
+    #         ## Temp changes
+    #
+    #         command = 'chmod 600 %s' % ('/root/.ssh/cyberpanel.pub')
+    #         ProcessUtilities.executioner(command)
+    #
+    #         command = "scp -o StrictHostKeyChecking=no -P " + port + " /root/.ssh/cyberpanel.pub " + user + "@" + IPAddress + ":~/.ssh/authorized_keys"
+    #         setupKeys = pexpect.spawn(command, timeout=3)
+    #
+    #         if os.path.exists(ProcessUtilities.debugPath):
+    #             logging.CyberCPLogFileWriter.writeToFile(command)
+    #
+    #         index = setupKeys.expect(expectation)
+    #
+    #         ## on first login attempt send password
+    #
+    #         if index == 0:
+    #             setupKeys.sendline(password)
+    #             setupKeys.expect("100%")
+    #             setupKeys.wait()
+    #         elif index == 1:
+    #             setupKeys.sendline(password)
+    #             setupKeys.expect("100%")
+    #             setupKeys.wait()
+    #         elif index == 2:
+    #             return [0, 'Please enable password authentication on your remote server.']
+    #         elif index == 3:
+    #             pass
+    #         else:
+    #             raise BaseException
+    #
+    #         ## Temp changes
+    #
+    #         command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
+    #         ProcessUtilities.executioner(command)
+    #
+    #         return [1, "None"]
+    #
+    #     except pexpect.TIMEOUT as msg:
+    #
+    #         command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
+    #         ProcessUtilities.executioner(command)
+    #
+    #         logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [sendKey]")
+    #         return [0, "TIMEOUT [sendKey]"]
+    #     except pexpect.EOF as msg:
+    #
+    #         command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
+    #         ProcessUtilities.executioner(command)
+    #
+    #         logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [sendKey]")
+    #         return [0, "EOF [sendKey]"]
+    #     except BaseException as msg:
+    #
+    #         command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
+    #         ProcessUtilities.executioner(command)
+    #
+    #         logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [sendKey]")
+    #         return [0, str(msg) + " [sendKey]"]
+
+    # @staticmethod
+    # def setupSSHKeys(IPAddress, password, port='22', user='root'):
+    #     try:
+    #         ## Checking for host verification
+    #
+    #         backupUtilities.host_key_verification(IPAddress)
+    #
+    #         if backupUtilities.checkIfHostIsUp(IPAddress) == 1:
+    #             pass
+    #         else:
+    #             logging.CyberCPLogFileWriter.writeToFile("Host is Down.")
+    #             # return [0,"Host is Down."]
+    #
+    #         expectation = []
+    #         expectation.append("password:")
+    #         expectation.append("Password:")
+    #         expectation.append("Permission denied")
+    #         expectation.append("File exists")
+    #
+    #         command = "ssh -o StrictHostKeyChecking=no -p " + port + ' ' + user + "@" + IPAddress + ' "mkdir ~/.ssh || rm -f ~/.ssh/temp && rm -f ~/.ssh/authorized_temp && cp ~/.ssh/authorized_keys ~/.ssh/temp || chmod 700 ~/.ssh || chmod g-w ~"'
+    #         setupKeys = pexpect.spawn(command, timeout=3)
+    #
+    #         if os.path.exists(ProcessUtilities.debugPath):
+    #             logging.CyberCPLogFileWriter.writeToFile(command)
+    #
+    #         index = setupKeys.expect(expectation)
+    #
+    #         ## on first login attempt send password
+    #
+    #         if index == 0:
+    #             setupKeys.sendline(password)
+    #         elif index == 1:
+    #             setupKeys.sendline(password)
+    #         elif index == 2:
+    #             return [0, 'Please enable password authentication on your remote server.']
+    #         elif index == 3:
+    #             pass
+    #         else:
+    #             raise BaseException
+    #
+    #         ## if it again give you password, than provided password is wrong
+    #
+    #         expectation = []
+    #         expectation.append("please try again.")
+    #         expectation.append("Password:")
+    #         expectation.append(pexpect.EOF)
+    #
+    #         index = setupKeys.expect(expectation)
+    #
+    #         if index == 0:
+    #             return [0, "Wrong Password!"]
+    #         elif index == 1:
+    #             return [0, "Wrong Password!"]
+    #         elif index == 2:
+    #             setupKeys.wait()
+    #
+    #             sendKey = backupUtilities.sendKey(IPAddress, password, port, user)
+    #
+    #             if sendKey[0] == 1:
+    #                 return [1, "None"]
+    #             else:
+    #                 return [0, sendKey[1]]
+    #
+    #
+    #     except pexpect.TIMEOUT as msg:
+    #         return [0, str(msg) + " [TIMEOUT setupSSHKeys]"]
+    #     except BaseException as msg:
+    #         return [0, str(msg) + " [setupSSHKeys]"]
+
     @staticmethod
     def sendKey(IPAddress, password, port='22', user='root'):
         try:
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(IPAddress, port=int(port), username=user, password=password)
 
-            expectation = []
-            expectation.append("password:")
-            expectation.append("Password:")
-            expectation.append("Permission denied")
-            expectation.append("100%")
-
-            ## Temp changes
+            if os.path.exists('/root/.ssh/cyberpanel.pub'):
+                pass
+            else:
+                command = "ssh-keygen -f /root/.ssh/cyberpanel -t rsa -N ''"
+                ProcessUtilities.executioner(command, 'root', True)
 
             command = 'chmod 600 %s' % ('/root/.ssh/cyberpanel.pub')
             ProcessUtilities.executioner(command)
 
-            command = "scp -o StrictHostKeyChecking=no -P " + port + " /root/.ssh/cyberpanel.pub " + user + "@" + IPAddress + ":~/.ssh/authorized_keys"
-            setupKeys = pexpect.spawn(command, timeout=3)
+            sftp = ssh.open_sftp()
+            sftp.put('/root/.ssh/cyberpanel.pub', '.ssh/authorized_keys')
+            sftp.close()
 
-            if os.path.exists(ProcessUtilities.debugPath):
-                logging.CyberCPLogFileWriter.writeToFile(command)
+            ssh.exec_command('chmod 600 .ssh/authorized_keys')
 
-            index = setupKeys.expect(expectation)
-
-            ## on first login attempt send password
-
-            if index == 0:
-                setupKeys.sendline(password)
-                setupKeys.expect("100%")
-                setupKeys.wait()
-            elif index == 1:
-                setupKeys.sendline(password)
-                setupKeys.expect("100%")
-                setupKeys.wait()
-            elif index == 2:
-                return [0, 'Please enable password authentication on your remote server.']
-            elif index == 3:
-                pass
-            else:
-                raise BaseException
-
-            ## Temp changes
+            ssh.close()
 
             command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
             ProcessUtilities.executioner(command)
 
             return [1, "None"]
 
-        except pexpect.TIMEOUT as msg:
 
-            command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
-            ProcessUtilities.executioner(command)
-
-            logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [sendKey]")
-            return [0, "TIMEOUT [sendKey]"]
-        except pexpect.EOF as msg:
-
-            command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
-            ProcessUtilities.executioner(command)
-
-            logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [sendKey]")
-            return [0, "EOF [sendKey]"]
-        except BaseException as msg:
-
-            command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
-            ProcessUtilities.executioner(command)
-
-            logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [sendKey]")
-            return [0, str(msg) + " [sendKey]"]
+        except paramiko.AuthenticationException:
+            return [0, 'Authentication failed. [sendKey]']
+        except paramiko.SSHException as e:
+            return [0, f'SSH error: {str(e)} [sendKey]']
+        except Exception as e:
+            return [0, f'General Error: {str(e)} [sendKey]']
 
     @staticmethod
     def setupSSHKeys(IPAddress, password, port='22', user='root'):
         try:
-            ## Checking for host verification
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(IPAddress, port=int(port), username=user, password=password)
 
-            backupUtilities.host_key_verification(IPAddress)
+            commands = [
+                "mkdir -p .ssh",
+                "rm -f .ssh/temp",
+                "rm -f .ssh/authorized_temp",
+                "cp .ssh/authorized_keys .ssh/temp",
+                "chmod 700 .ssh",
+                "chmod g-w ~",
+            ]
 
-            if backupUtilities.checkIfHostIsUp(IPAddress) == 1:
-                pass
+            for command in commands:
+                try:
+                    ssh.exec_command(command)
+                except BaseException as msg:
+                    logging.CyberCPLogFileWriter.writeToFile(f'Error executing remote command {command}. Error {str(msg)}')
+
+            ssh.close()
+
+            sendKey = backupUtilities.sendKey(IPAddress, password, port, user)
+
+            if sendKey[0] == 1:
+                command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
+                ProcessUtilities.executioner(command)
+                return [1, "None"]
             else:
-                logging.CyberCPLogFileWriter.writeToFile("Host is Down.")
-                # return [0,"Host is Down."]
+                command = 'chmod 644 %s' % ('/root/.ssh/cyberpanel.pub')
+                ProcessUtilities.executioner(command)
+                return [0, sendKey[1]]
 
-            expectation = []
-            expectation.append("password:")
-            expectation.append("Password:")
-            expectation.append("Permission denied")
-            expectation.append("File exists")
+        except paramiko.AuthenticationException:
+            return [0, 'Authentication failed. [setupSSHKeys]']
+        except paramiko.SSHException as e:
+            return [0, f'SSH error: {str(e)} [setupSSHKeys]']
+        except Exception as e:
+            return [0, f'General Error: {str(e)} [setupSSHKeys]']
 
-            command = "ssh -o StrictHostKeyChecking=no -p " + port + ' ' + user + "@" + IPAddress + ' "mkdir ~/.ssh || rm -f ~/.ssh/temp && rm -f ~/.ssh/authorized_temp && cp ~/.ssh/authorized_keys ~/.ssh/temp || chmod 700 ~/.ssh || chmod g-w ~"'
-            setupKeys = pexpect.spawn(command, timeout=3)
-
-            if os.path.exists(ProcessUtilities.debugPath):
-                logging.CyberCPLogFileWriter.writeToFile(command)
-
-            index = setupKeys.expect(expectation)
-
-            ## on first login attempt send password
-
-            if index == 0:
-                setupKeys.sendline(password)
-            elif index == 1:
-                setupKeys.sendline(password)
-            elif index == 2:
-                return [0, 'Please enable password authentication on your remote server.']
-            elif index == 3:
-                pass
-            else:
-                raise BaseException
-
-            ## if it again give you password, than provided password is wrong
-
-            expectation = []
-            expectation.append("please try again.")
-            expectation.append("Password:")
-            expectation.append(pexpect.EOF)
-
-            index = setupKeys.expect(expectation)
-
-            if index == 0:
-                return [0, "Wrong Password!"]
-            elif index == 1:
-                return [0, "Wrong Password!"]
-            elif index == 2:
-                setupKeys.wait()
-
-                sendKey = backupUtilities.sendKey(IPAddress, password, port, user)
-
-                if sendKey[0] == 1:
-                    return [1, "None"]
-                else:
-                    return [0, sendKey[1]]
-
-
-        except pexpect.TIMEOUT as msg:
-            return [0, str(msg) + " [TIMEOUT setupSSHKeys]"]
-        except BaseException as msg:
-            return [0, str(msg) + " [setupSSHKeys]"]
 
     @staticmethod
     def checkIfHostIsUp(IPAddress):
@@ -2058,17 +2158,22 @@ def submitBackupCreation(tempStoragePath, backupName, backupPath, backupDomain):
         from plogical.IncScheduler import IncScheduler
         import json
         from plogical.getSystemInformation import SystemInformation
+        #
+        # IncScheduler.CalculateAndUpdateDiskUsage()
 
-        IncScheduler.CalculateAndUpdateDiskUsage()
+        try:
 
-        website = Websites.objects.get(domain=backupDomain)
-        DiskUsageOfSite = json.loads(website.config)['DiskUsage']
-        used_disk, free_disk, percent_used = SystemInformation.GetRemainingDiskUsageInMBs()
+            website = Websites.objects.get(domain=backupDomain)
+            DiskUsageOfSite = json.loads(website.config)['DiskUsage']
+            used_disk, free_disk, percent_used = SystemInformation.GetRemainingDiskUsageInMBs()
 
-        if float(free_disk) <= float(DiskUsageOfSite):
-            command = f"echo 'Disk space exceeded the website size. [2065][5009]' > %s"
-            ProcessUtilities.executioner(command, website.externalApp)
-            return 0
+
+            if float(free_disk) <= float(DiskUsageOfSite):
+                command = f"echo 'Disk space exceeded the website size. [2065][5009]' > %s"
+                ProcessUtilities.executioner(command, website.externalApp)
+                return 0
+        except:
+            pass
 
         ###
 

@@ -39,7 +39,7 @@ class Upgrade:
     UbuntuPath = '/etc/lsb-release'
     openEulerPath = '/etc/openEuler-release'
     FromCloud = 0
-    SnappyVersion = '2.32.0'
+    SnappyVersion = '2.33.0'
     LogPathNew = '/home/cyberpanel/upgrade_logs'
     SoftUpgrade = 0
 
@@ -312,7 +312,7 @@ class Upgrade:
             command = 'wget -O /usr/local/CyberCP/public/phpmyadmin.zip https://github.com/usmannasir/cyberpanel/raw/stable/phpmyadmin.zip'
             Upgrade.executioner(command, 0)
 
-            command = 'unzip /usr/local/CyberCP/public/phpmyadmin.zip -d /usr/local/CyberCP/public/phpmyadmin'
+            command = 'unzip /usr/local/CyberCP/public/phpmyadmin.zip -d /usr/local/CyberCP/public/'
             Upgrade.executioner(command, 0)
 
             command = 'mv /usr/local/CyberCP/public/phpMyAdmin-*-all-languages /usr/local/CyberCP/public/phpmyadmin'
@@ -1690,7 +1690,26 @@ CREATE TABLE `websiteFunctions_backupsv2` (`id` integer AUTO_INCREMENT NOT NULL 
             except:
                 pass
 
+            query = "ALTER TABLE `websiteFunctions_dockersites` ADD CONSTRAINT `websiteFunctions_doc_admin_id_88f5cb6d_fk_websiteFu` FOREIGN KEY (`admin_id`) REFERENCES `websiteFunctions_websites` (`id`);"
+            try:
+                cursor.execute(query)
+            except:
+                pass
+
+            query = "CREATE TABLE `websiteFunctions_packageassignment` (`id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY, `package_id` integer NOT NULL, `user_id` integer NOT NULL);"
+            try:
+                cursor.execute(query)
+            except:
+                pass
+
+
             query = """ALTER TABLE `websiteFunctions_packageassignment` ADD CONSTRAINT `websiteFunctions_pac_package_id_420b6aff_fk_websiteFu` FOREIGN KEY (`package_id`) REFERENCES `websiteFunctions_dockerpackages` (`id`);"""
+            try:
+                cursor.execute(query)
+            except:
+                pass
+
+            query = "ALTER TABLE `websiteFunctions_packageassignment` ADD CONSTRAINT `websiteFunctions_pac_user_id_864958ce_fk_loginSyst` FOREIGN KEY (`user_id`) REFERENCES `loginSystem_administrator` (`id`);"
             try:
                 cursor.execute(query)
             except:
@@ -2027,6 +2046,13 @@ CREATE TABLE `websiteFunctions_backupsv2` (`id` integer AUTO_INCREMENT NOT NULL 
                 cursor.execute(query)
             except:
                 pass
+
+            query = "ALTER TABLE `websiteFunctions_childdomains` ADD `alais` INT NOT NULL DEFAULT '0' AFTER `master_id`; "
+            try:
+                cursor.execute(query)
+            except:
+                pass
+
 
             try:
                 connection.close()

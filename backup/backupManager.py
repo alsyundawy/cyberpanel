@@ -1204,6 +1204,13 @@ class BackupManager:
                 port = output.strip('\n')
 
 
+                ### if value of port return empty then int function fails which means port is not set so defaults to 22
+                try:
+                    portT = int(port)
+                except:
+                    port = '22'
+
+
                 ipFile = os.path.join("/etc", "cyberpanel", "machineIP")
                 f = open(ipFile)
                 ownIP = f.read()
@@ -1732,7 +1739,7 @@ class BackupManager:
 
             selectedJob = data['selectedJob']
             backupFrequency = data['backupFrequency']
-            backupRetention = data['backupRetention']
+
 
             nbj = NormalBackupJobs.objects.get(name=selectedJob)
 
@@ -1741,7 +1748,12 @@ class BackupManager:
 
             config = json.loads(nbj.config)
             config[IncScheduler.frequency] = backupFrequency
-            config[IncScheduler.retention] = backupRetention
+            try:
+                backupRetention = data['backupRetention']
+                config[IncScheduler.retention] = backupRetention
+            except:
+                pass
+
 
             nbj.config = json.dumps(config)
             nbj.save()
@@ -1859,7 +1871,7 @@ class BackupManager:
 
             statusFile = f'/home/cyberpanel/{domain}_rustic_backup_log'
 
-            if ACLManager.CheckStatusFilleLoc(statusFile):
+            if ACLManager.CheckStatusFilleLoc(statusFile, domain):
                 pass
             else:
                 data_ret = {'abort': 1, 'installStatus': 0, 'installationProgress': "100",

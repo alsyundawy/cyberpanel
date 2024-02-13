@@ -3,15 +3,20 @@ import json
 import os
 import sys
 import time
-
 sys.path.append('/usr/local/CyberCP')
-import django
+
+try:
+    import django
+except:
+    pass
 
 try:
     from plogical import randomPassword
     from plogical.acl import ACLManager
+    from dockerManager.dockerInstall import DockerInstall
 except:
     pass
+
 from plogical.processUtilities import ProcessUtilities
 from plogical.CyberCPLogFileWriter import CyberCPLogFileWriter as logging
 import argparse
@@ -174,10 +179,7 @@ REWRITERULE ^(.*)$ HTTP://docker{port}/$1 [P]
             result = ProcessUtilities.outputExecutioner(command)
             print(f'return code of docker install {result}')
             if result.find("not found") > -1:
-                status, message = self.InstallDocker()
-                if status == 0:
-                    logging.statusWriter(self.JobID, 'Failed to installed docker. [404]')
-                    return 0, message
+                DockerInstall.submitInstallDocker(1)
 
             logging.statusWriter(self.JobID, 'Docker is ready to use..,10')
 
@@ -662,10 +664,7 @@ services:
             result = ProcessUtilities.outputExecutioner(command)
             print(f'return code of docker install {result}')
             if result.find("not found") > -1:
-                status, message = self.InstallDocker()
-                if status == 0:
-                    logging.statusWriter(self.JobID, 'Failed to installed docker. [404]')
-                    return 0, message
+                DockerInstall.submitInstallDocker()
 
             logging.statusWriter(self.JobID, 'Docker is ready to use..,10')
 

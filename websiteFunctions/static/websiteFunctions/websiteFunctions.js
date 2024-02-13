@@ -4521,6 +4521,21 @@ app.controller('websitePages', function ($scope, $http, $timeout, $window) {
 
     var statusFile;
 
+
+    $scope.webselection = true;
+    $scope.WebsiteType = function () {
+        var type = $scope.websitetype;
+        if (type == 'Sub Domain') {
+            $scope.webselection = false;
+            $scope.DomainCreateForm = true;
+
+        } else if (type == 'Addon Domain') {
+            $scope.DomainCreateForm = false;
+            $scope.webselection = true;
+            $scope.masterDomain = $('#defaultSite').html()
+        }
+    };
+
     $scope.WebsiteSelection = function () {
         $scope.DomainCreateForm = false;
     };
@@ -4584,7 +4599,10 @@ app.controller('websitePages', function ($scope, $http, $timeout, $window) {
         //
         //     var domainName = $scope.own_domainNameCreate;
         // }
+        var type = $scope.websitetype;
+
         var domainName = $scope.domainNameCreate;
+
 
         var data = {
             domainName: domainName,
@@ -4602,6 +4620,8 @@ app.controller('websitePages', function ($scope, $http, $timeout, $window) {
                 'X-CSRFToken': getCookie('csrftoken')
             }
         };
+
+        // console.log(data)
 
         $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
 
@@ -4808,7 +4828,6 @@ app.controller('websitePages', function ($scope, $http, $timeout, $window) {
         }
 
     }
-
 
     $scope.changePHP = function (childDomain, phpSelection) {
 
@@ -5755,11 +5774,14 @@ app.controller('manageAliasController', function ($scope, $http, $timeout, $wind
 
     $scope.showAliasForm = function (domainName) {
 
-        $scope.domainAliasForm = false;
-        $scope.aliasTable = true;
-        $scope.addAliasButton = true;
+        //$scope.domainAliasForm = false;
+        //$scope.aliasTable = true;
+        //$scope.addAliasButton = true;
 
         masterDomain = domainName;
+
+        $scope.showCreateDomainForm();
+        $scope.masterDomain = domainName;
 
     };
 
@@ -5982,6 +6004,641 @@ app.controller('manageAliasController', function ($scope, $http, $timeout, $wind
             $scope.aliasCreated = true;
             $scope.manageAliasLoading = true;
             $scope.operationSuccess = true;
+
+
+        }
+
+
+    };
+
+
+    ////// create domain part
+
+    $("#domainCreationForm").hide();
+
+    $scope.showCreateDomainForm = function () {
+        $("#domainCreationForm").fadeIn();
+    };
+
+    $scope.hideDomainCreationForm = function () {
+        $("#domainCreationForm").fadeOut();
+    };
+
+    $scope.masterDomain = $("#domainNamePage").text();
+
+    // notifcations settings
+    $scope.domainLoading = true;
+    $scope.installationDetailsForm = false;
+    $scope.installationProgress = true;
+    $scope.errorMessageBox = true;
+    $scope.success = true;
+    $scope.couldNotConnect = true;
+    $scope.goBackDisable = true;
+    $scope.DomainCreateForm = true;
+
+    var statusFile;
+
+
+    $scope.webselection = true;
+    $scope.WebsiteType = function () {
+        var type = $scope.websitetype;
+        if (type == 'Sub Domain') {
+            $scope.webselection = false;
+            $scope.DomainCreateForm = true;
+
+        } else if (type == 'Addon Domain') {
+            $scope.DomainCreateForm = false;
+            $scope.webselection = true;
+            $scope.masterDomain = $('#defaultSite').html()
+        }
+    };
+
+    $scope.WebsiteSelection = function () {
+        $scope.DomainCreateForm = false;
+    };
+
+    $scope.createDomain = function () {
+
+        $scope.domainLoading = false;
+        $scope.installationDetailsForm = true;
+        $scope.installationProgress = false;
+        $scope.errorMessageBox = true;
+        $scope.success = true;
+        $scope.couldNotConnect = true;
+        $scope.goBackDisable = true;
+        $scope.currentStatus = "Starting creation..";
+        $scope.DomainCreateForm = true;
+
+        var ssl, dkimCheck, openBasedir, apacheBackend;
+
+        if ($scope.sslCheck === true) {
+            ssl = 1;
+        } else {
+            ssl = 0
+        }
+
+        if ($scope.dkimCheck === true) {
+            dkimCheck = 1;
+        } else {
+            dkimCheck = 0
+        }
+
+        openBasedir = 0;
+
+
+        apacheBackend = 0
+
+
+        url = "/websites/submitDomainCreation";
+        var domainName = $scope.domainNameCreate;
+
+        var path = $scope.docRootPath;
+
+        if (typeof path === 'undefined') {
+            path = "";
+        }
+
+        var domainName = $scope.domainNameCreate;
+
+
+        var data = {
+            domainName: domainName,
+            ssl: ssl,
+            path: path,
+            masterDomain: $scope.masterDomain,
+            dkimCheck: 1,
+            openBasedir: 0,
+            alias: 1
+        };
+
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+        // console.log(data)
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+
+            if (response.data.createWebSiteStatus === 1) {
+                statusFile = response.data.tempStatusPath;
+                getCreationStatus();
+            } else {
+
+                $scope.domainLoading = true;
+                $scope.installationDetailsForm = true;
+                $scope.DomainCreateForm = true;
+                $scope.installationProgress = false;
+                $scope.errorMessageBox = false;
+                $scope.success = true;
+                $scope.couldNotConnect = true;
+                $scope.goBackDisable = false;
+
+                $scope.errorMessage = response.data.error_message;
+            }
+
+
+        }
+
+        function cantLoadInitialDatas(response) {
+
+            $scope.domainLoading = true;
+            $scope.installationDetailsForm = true;
+            $scope.DomainCreateForm = true;
+            $scope.installationProgress = false;
+            $scope.errorMessageBox = true;
+            $scope.success = true;
+            $scope.couldNotConnect = false;
+            $scope.goBackDisable = false;
+
+        }
+
+
+    };
+
+    $scope.goBack = function () {
+        $scope.domainLoading = true;
+        $scope.installationDetailsForm = false;
+        $scope.DomainCreateForm = true;
+        $scope.installationProgress = true;
+        $scope.errorMessageBox = true;
+        $scope.success = true;
+        $scope.couldNotConnect = true;
+        $scope.goBackDisable = true;
+        $scope.DomainCreateForm = true;
+        $("#installProgress").css("width", "0%");
+    };
+
+    function getCreationStatus() {
+
+        url = "/websites/installWordpressStatus";
+
+        var data = {
+            statusFile: statusFile
+        };
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+
+
+            if (response.data.abort === 1) {
+
+                if (response.data.installStatus === 1) {
+
+                    $scope.domainLoading = true;
+                    $scope.installationDetailsForm = true;
+                    $scope.installationProgress = false;
+                    $scope.errorMessageBox = true;
+                    $scope.success = false;
+                    $scope.couldNotConnect = true;
+                    $scope.goBackDisable = false;
+
+                    $("#installProgress").css("width", "100%");
+                    $scope.installPercentage = "100";
+                    $scope.currentStatus = response.data.currentStatus;
+                    $timeout.cancel();
+                    fetchDomains();
+
+                } else {
+
+                    $scope.domainLoading = true;
+                    $scope.installationDetailsForm = true;
+                    $scope.DomainCreateForm = true;
+                    $scope.installationProgress = false;
+                    $scope.errorMessageBox = false;
+                    $scope.success = true;
+                    $scope.couldNotConnect = true;
+                    $scope.goBackDisable = false;
+
+                    $scope.errorMessage = response.data.error_message;
+
+                    $("#installProgress").css("width", "0%");
+                    $scope.installPercentage = "0";
+                    $scope.goBackDisable = false;
+
+                }
+
+            } else {
+                $("#installProgress").css("width", response.data.installationProgress + "%");
+                $scope.installPercentage = response.data.installationProgress;
+                $scope.currentStatus = response.data.currentStatus;
+                $timeout(getCreationStatus, 1000);
+            }
+
+        }
+
+        function cantLoadInitialDatas(response) {
+
+            $scope.domainLoading = true;
+            $scope.installationDetailsForm = true;
+            $scope.DomainCreateForm = true;
+            $scope.installationProgress = false;
+            $scope.errorMessageBox = true;
+            $scope.success = true;
+            $scope.couldNotConnect = false;
+            $scope.goBackDisable = false;
+
+        }
+
+
+    }
+
+
+    ////// List Domains Part
+
+    ////////////////////////
+
+    // notifcations
+
+    $scope.phpChanged = true;
+    $scope.domainError = true;
+    $scope.couldNotConnect = true;
+    $scope.domainDeleted = true;
+    $scope.sslIssued = true;
+    $scope.childBaseDirChanged = true;
+
+    fetchDomains();
+
+    $scope.showListDomains = function () {
+        fetchDomains();
+        $("#listDomains").fadeIn();
+    };
+
+    $scope.hideListDomains = function () {
+        $("#listDomains").fadeOut();
+    };
+
+    function fetchDomains() {
+        $scope.domainLoading = false;
+
+        var url = "/websites/fetchDomains";
+
+        var data = {
+            masterDomain: $("#domainNamePage").text(),
+            alias: 1
+        };
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+
+
+            if (response.data.fetchStatus === 1) {
+
+                $scope.childDomains = JSON.parse(response.data.data);
+                $scope.domainLoading = true;
+
+
+            } else {
+                $scope.domainError = false;
+                $scope.errorMessage = response.data.error_message;
+                $scope.domainLoading = true;
+            }
+
+
+        }
+
+        function cantLoadInitialDatas(response) {
+
+            $scope.couldNotConnect = false;
+
+        }
+
+    }
+
+    $scope.changePHP = function (childDomain, phpSelection) {
+
+        // notifcations
+
+        $scope.phpChanged = true;
+        $scope.domainError = true;
+        $scope.couldNotConnect = true;
+        $scope.domainDeleted = true;
+        $scope.sslIssued = true;
+        $scope.domainLoading = false;
+        $scope.childBaseDirChanged = true;
+
+        var url = "/websites/changePHP";
+
+        var data = {
+            childDomain: childDomain,
+            phpSelection: phpSelection,
+        };
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+
+
+            if (response.data.changePHP === 1) {
+
+                $scope.domainLoading = true;
+
+                $scope.changedPHPVersion = phpSelection;
+
+
+                // notifcations
+
+                $scope.phpChanged = false;
+                $scope.domainError = true;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = true;
+                $scope.sslIssued = true;
+                $scope.childBaseDirChanged = true;
+
+
+            } else {
+                $scope.errorMessage = response.data.error_message;
+                $scope.domainLoading = true;
+
+                // notifcations
+
+                $scope.phpChanged = true;
+                $scope.domainError = false;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = true;
+                $scope.sslIssued = true;
+                $scope.childBaseDirChanged = true;
+            }
+
+
+        }
+
+        function cantLoadInitialDatas(response) {
+
+            $scope.domainLoading = true;
+
+            // notifcations
+
+            $scope.phpChanged = true;
+            $scope.domainError = false;
+            $scope.couldNotConnect = true;
+            $scope.domainDeleted = true;
+            $scope.sslIssued = true;
+            $scope.childBaseDirChanged = true;
+
+        }
+
+    };
+
+    $scope.changeChildBaseDir = function (childDomain, openBasedirValue) {
+
+        // notifcations
+
+        $scope.phpChanged = true;
+        $scope.domainError = true;
+        $scope.couldNotConnect = true;
+        $scope.domainDeleted = true;
+        $scope.sslIssued = true;
+        $scope.domainLoading = false;
+        $scope.childBaseDirChanged = true;
+
+
+        var url = "/websites/changeOpenBasedir";
+
+        var data = {
+            domainName: childDomain,
+            openBasedirValue: openBasedirValue
+        };
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+
+
+            if (response.data.changeOpenBasedir === 1) {
+
+                $scope.phpChanged = true;
+                $scope.domainError = true;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = true;
+                $scope.sslIssued = true;
+                $scope.domainLoading = true;
+                $scope.childBaseDirChanged = false;
+
+            } else {
+
+                $scope.phpChanged = true;
+                $scope.domainError = false;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = true;
+                $scope.sslIssued = true;
+                $scope.domainLoading = true;
+                $scope.childBaseDirChanged = true;
+
+                $scope.errorMessage = response.data.error_message;
+
+            }
+
+
+        }
+
+        function cantLoadInitialDatas(response) {
+
+            $scope.phpChanged = true;
+            $scope.domainError = true;
+            $scope.couldNotConnect = false;
+            $scope.domainDeleted = true;
+            $scope.sslIssued = true;
+            $scope.domainLoading = true;
+            $scope.childBaseDirChanged = true;
+
+
+        }
+
+    }
+
+    $scope.deleteChildDomain = function (childDomain) {
+        $scope.domainLoading = false;
+
+        // notifcations
+
+        $scope.phpChanged = true;
+        $scope.domainError = true;
+        $scope.couldNotConnect = true;
+        $scope.domainDeleted = true;
+        $scope.sslIssued = true;
+
+        url = "/websites/submitDomainDeletion";
+
+        var data = {
+            websiteName: childDomain,
+        };
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+
+
+            if (response.data.websiteDeleteStatus === 1) {
+
+                $scope.domainLoading = true;
+                $scope.deletedDomain = childDomain;
+
+                fetchDomains();
+
+
+                // notifications
+
+                $scope.phpChanged = true;
+                $scope.domainError = true;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = false;
+                $scope.sslIssued = true;
+
+
+            } else {
+                $scope.errorMessage = response.data.error_message;
+                $scope.domainLoading = true;
+
+                // notifcations
+
+                $scope.phpChanged = true;
+                $scope.domainError = false;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = true;
+                $scope.sslIssued = true;
+            }
+
+
+        }
+
+        function cantLoadInitialDatas(response) {
+
+            $scope.domainLoading = true;
+
+            // notifcations
+
+            $scope.phpChanged = true;
+            $scope.domainError = true;
+            $scope.couldNotConnect = false;
+            $scope.domainDeleted = true;
+            $scope.sslIssued = true;
+
+        }
+
+    };
+
+    $scope.issueSSL = function (childDomain, path) {
+        $scope.domainLoading = false;
+
+        // notifcations
+
+        $scope.phpChanged = true;
+        $scope.domainError = true;
+        $scope.couldNotConnect = true;
+        $scope.domainDeleted = true;
+        $scope.sslIssued = true;
+        $scope.childBaseDirChanged = true;
+
+        var url = "/manageSSL/issueSSL";
+
+
+        var data = {
+            virtualHost: childDomain,
+            path: path,
+        };
+
+        var config = {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        };
+
+        $http.post(url, data, config).then(ListInitialDatas, cantLoadInitialDatas);
+
+
+        function ListInitialDatas(response) {
+
+
+            if (response.data.SSL === 1) {
+
+                $scope.domainLoading = true;
+
+                // notifcations
+
+                $scope.phpChanged = true;
+                $scope.domainError = true;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = true;
+                $scope.sslIssued = false;
+                $scope.childBaseDirChanged = true;
+
+
+                $scope.sslDomainIssued = childDomain;
+
+
+            } else {
+                $scope.domainLoading = true;
+
+                $scope.errorMessage = response.data.error_message;
+
+                // notifcations
+
+                $scope.phpChanged = true;
+                $scope.domainError = false;
+                $scope.couldNotConnect = true;
+                $scope.domainDeleted = true;
+                $scope.sslIssued = true;
+                $scope.childBaseDirChanged = true;
+
+            }
+
+
+        }
+
+        function cantLoadInitialDatas(response) {
+
+            // notifcations
+
+            $scope.phpChanged = true;
+            $scope.domainError = true;
+            $scope.couldNotConnect = false;
+            $scope.domainDeleted = true;
+            $scope.sslIssued = true;
+            $scope.childBaseDirChanged = true;
 
 
         }
@@ -10759,7 +11416,7 @@ app.controller('ListDockersitecontainer', function ($scope, $http) {
 
 
     $scope.refreshStatus = function () {
-         $('#actionLoading').show();
+        $('#actionLoading').show();
         url = "/docker/getContainerStatus";
         var data = {name: $scope.cName};
         var config = {
@@ -10771,7 +11428,7 @@ app.controller('ListDockersitecontainer', function ($scope, $http) {
         $http.post(url, data, config).then(ListInitialData, cantLoadInitialData);
 
         function ListInitialData(response) {
-             $('#actionLoading').hide();
+            $('#actionLoading').hide();
             if (response.data.containerStatus === 1) {
                 console.log(response.data.status);
                 $scope.status = response.data.status;
@@ -10786,7 +11443,7 @@ app.controller('ListDockersitecontainer', function ($scope, $http) {
         }
 
         function cantLoadInitialData(response) {
-             $('#actionLoading').hide();
+            $('#actionLoading').hide();
             PNotify.error({
                 title: 'Unable to complete request',
                 text: "Problem in connecting to server"
@@ -10796,7 +11453,7 @@ app.controller('ListDockersitecontainer', function ($scope, $http) {
     };
 
     $scope.restarthStatus = function () {
-         $('#actionLoading').show();
+        $('#actionLoading').show();
         url = "/docker/RestartContainerAPP";
         var data = {
             name: $scope.cName,
@@ -10811,7 +11468,7 @@ app.controller('ListDockersitecontainer', function ($scope, $http) {
         $http.post(url, data, config).then(ListInitialData, cantLoadInitialData);
 
         function ListInitialData(response) {
-             $('#actionLoading').hide();
+            $('#actionLoading').hide();
             if (response.data.status === 1) {
                 if (response.data.data[0] === 1) {
                     new PNotify({
@@ -10838,7 +11495,7 @@ app.controller('ListDockersitecontainer', function ($scope, $http) {
         }
 
         function cantLoadInitialData(response) {
-             $('#actionLoading').hide();
+            $('#actionLoading').hide();
             PNotify.error({
                 title: 'Unable to complete request',
                 text: "Problem in connecting to server"

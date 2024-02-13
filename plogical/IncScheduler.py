@@ -1,6 +1,9 @@
 #!/usr/local/CyberCP/bin/python
 import os.path
 import sys
+
+import paramiko
+
 sys.path.append('/usr/local/CyberCP')
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "CyberCP.settings")
 import django
@@ -509,6 +512,7 @@ class IncScheduler(multi.Thread):
             destinationConfig = json.loads(backupjob.owner.config)
 
             currentTime = time.strftime("%m.%d.%Y_%H-%M-%S")
+            print(destinationConfig['type'])
 
             if destinationConfig['type'] == 'local':
 
@@ -532,7 +536,6 @@ class IncScheduler(multi.Thread):
 
                         if result.find(pid) > -1 and result.find('IncScheduler.py') > -1:
                             quit(1)
-
 
                     except:
                         ### Save some important info in backup config
@@ -621,18 +624,51 @@ Automatic backup failed for %s on %s.
                     backupjob.config = json.dumps(jobConfig)
                     backupjob.save()
             else:
-
-
                 if jobConfig[IncScheduler.frequency] == type:
-
-                    import subprocess
-                    import shlex
+                    print(jobConfig[IncScheduler.frequency])
                     finalPath = '%s/%s' % (destinationConfig['path'].rstrip('/'), currentTime)
-                    command = "ssh -o StrictHostKeyChecking=no -p " + destinationConfig[
-                        'port'] + " -i /root/.ssh/cyberpanel " + destinationConfig['username'] + "@" + \
-                              destinationConfig[
-                                  'ip'] + " mkdir -p %s" % (finalPath)
-                    subprocess.call(shlex.split(command))
+
+                    # import subprocess
+                    # import shlex
+                    # command = "ssh -o StrictHostKeyChecking=no -p " + destinationConfig[
+                    #     'port'] + " -i /root/.ssh/cyberpanel " + destinationConfig['username'] + "@" + \
+                    #           destinationConfig[
+                    #               'ip'] + " mkdir -p %s" % (finalPath)
+                    # subprocess.call(shlex.split(command))
+
+                    ### improved paramiko code
+                    private_key_path = '/root/.ssh/cyberpanel'
+
+                    # Create an SSH client
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+                    # Load the private key
+                    private_key = paramiko.RSAKey.from_private_key_file(private_key_path)
+
+                    # Connect to the server using the private key
+                    try:
+                        ssh.connect(destinationConfig['ip'], port=int(destinationConfig['port']), username=destinationConfig['username'], pkey=private_key)
+                    except BaseException as msg:
+                        NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO,
+                                            message=f'Failed to make sftp connection {str(msg)}').save()
+                        print(str(msg))
+                        continue
+                    # Execute the command to create the remote directory
+                    command = f'mkdir -p {finalPath}'
+                    stdin, stdout, stderr = ssh.exec_command(command)
+
+                    # Wait for the command to finish and check for any errors
+                    stdout.channel.recv_exit_status()
+                    error_message = stderr.read().decode('utf-8')
+                    print(error_message)
+                    if error_message:
+                        NormalBackupJobLogs(owner=backupjob, status=backupSchedule.INFO,
+                                            message=f'Error while creating directory on remote server {error_message.strip()}').save()
+                        continue
+                    else:
+                        pass
+
 
                     ### Check if an old job prematurely killed, then start from there.
                     # try:
@@ -1484,7 +1520,10 @@ Automatic Backupv2 failed for %s on %s.
         try:
             from loginSystem.models import Administrator
             admin = Administrator.objects.get(pk=1)
-            config = json.loads(admin.config)
+            try:
+                config = json.loads(admin.config)
+            except:
+                config = {}
 
             ### probably need to add temporary dns resolver nameserver here - pending
 
@@ -1492,7 +1531,7 @@ Automatic Backupv2 failed for %s on %s.
                 CurrentHostName = config['hostname']
                 skipRDNSCheck = config['skipRDNSCheck']
             except:
-                CurrentHostName = ''
+                CurrentHostName = mailUtilities.FetchPostfixHostname()
                 skipRDNSCheck = 1
 
             virtualHostUtilities.OnBoardingHostName(CurrentHostName, '/home/cyberpanel/onboarding_temp_path', skipRDNSCheck)
@@ -1546,6 +1585,7 @@ def main():
     IncScheduler.CheckHostName()
 
     ib.join()
+
 
 
 if __name__ == "__main__":
