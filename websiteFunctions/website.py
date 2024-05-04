@@ -3326,6 +3326,13 @@ class WebsiteManager:
         configData = data['configData']
         self.domain = data['virtualHost']
 
+        if len(configData) == 0:
+            status = {"configstatus": 0, 'error_message': 'Error: you are trying to save empty vhost file, your website will stop working.'}
+
+            final_json = json.dumps(status)
+            return HttpResponse(final_json)
+
+
         command = 'cat %s' % ('/usr/local/lsws/conf/dvhost_redis.conf')
 
         if ProcessUtilities.outputExecutioner(command).find('127.0.0.1') == -1:
@@ -4602,10 +4609,21 @@ StrictHostKeyChecking no
 
             DiskUsage, DiskUsagePercentage, bwInMB, bwUsage = virtualHostUtilities.FindStats(items)
 
+            vhFile = f'/usr/local/lsws/conf/vhosts/{items.domain}/vhost.conf'
+
+            if os.path.exists(ProcessUtilities.debugPath):
+                logging.CyberCPLogFileWriter.writeToFile(vhFile)
+
+            try:
+                from plogical.phpUtilities import phpUtilities
+                PHPVersionActual = phpUtilities.WrapGetPHPVersionFromFileToGetVersionWithPHP(vhFile)
+            except:
+                PHPVersionActual = 'PHP 8.1'
+
             diskUsed = "%sMB" % str(DiskUsage)
             dic = {'domain': items.domain, 'adminEmail': items.adminEmail, 'ipAddress': ipAddress,
                    'admin': items.admin.userName, 'package': items.package.packageName, 'state': state,
-                   'diskUsed': diskUsed}
+                   'diskUsed': diskUsed, 'phpVersion': PHPVersionActual}
 
             if checker == 0:
                 json_data = json_data + json.dumps(dic)

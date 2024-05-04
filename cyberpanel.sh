@@ -867,6 +867,7 @@ EOF
 
     dnf config-manager --set-enabled PowerTools > /dev/null 2>&1
     dnf config-manager --set-enabled powertools > /dev/null 2>&1
+
   
 #    cat <<EOF >/etc/yum.repos.d/CentOS-PowerTools-CyberPanel.repo
 #[powertools-for-cyberpanel]

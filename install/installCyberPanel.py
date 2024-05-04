@@ -37,6 +37,20 @@ def get_Ubuntu_release():
     return release
 
 
+def FetchCloudLinuxAlmaVersionVersion():
+    if os.path.exists('/etc/os-release'):
+        data = open('/etc/os-release', 'r').read()
+        if (data.find('CloudLinux') > -1 or data.find('cloudlinux') > -1) and (data.find('8.9') > -1 or data.find('Anatoly Levchenko') > -1):
+            return 'cl-89'
+        elif (data.find('CloudLinux') > -1 or data.find('cloudlinux') > -1) and (data.find('8.8') > -1 or data.find('Anatoly Filipchenko') > -1):
+            return 'cl-88'
+        elif (data.find('AlmaLinux') > -1 or data.find('almalinux') > -1) and (data.find('8.9') > -1 or data.find('Midnight Oncilla') > -1):
+            return 'al-88'
+        elif (data.find('AlmaLinux') > -1 or data.find('almalinux') > -1) and (data.find('8.7') > -1 or data.find('Stone Smilodon') > -1):
+            return 'al-87'
+    else:
+        return -1
+
 class InstallCyberPanel:
     mysql_Root_password = ""
     mysqlPassword = ""
@@ -349,20 +363,40 @@ gpgcheck=1
             command = 'dnf install mariadb-server -y'
         elif self.distro == cent8 or self.distro == openeuler:
 
-            command = 'curl -LsS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | sudo bash -s -- --mariadb-server-version=10.11'
-            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
-
-            command = 'yum remove mariadb* -y'
-            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
-
-            command = 'sudo dnf -qy module disable mariadb'
-            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
-
-            command = 'sudo dnf module reset mariadb -y'
-            install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+            clAPVersion = FetchCloudLinuxAlmaVersionVersion()
+            type = clAPVersion.split('-')[0]
+            version = int(clAPVersion.split('-')[1])
 
 
-            command = 'dnf install MariaDB-server MariaDB-client MariaDB-backup -y'
+            if type == 'cl' and version >= 88:
+
+                command = 'yum remove db-governor db-governor-mysql -y'
+                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+                command = 'yum install governor-mysql -y'
+                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+                command = '/usr/share/lve/dbgovernor/mysqlgovernor.py --mysql-version=mariadb106'
+                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+                command = '/usr/share/lve/dbgovernor/mysqlgovernor.py --install --yes'
+
+            else:
+
+                command = 'curl -LsS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | sudo bash -s -- --mariadb-server-version=10.11'
+                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+                command = 'yum remove mariadb* -y'
+                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+                command = 'sudo dnf -qy module disable mariadb'
+                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+                command = 'sudo dnf module reset mariadb -y'
+                install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+
+
+                command = 'dnf install MariaDB-server MariaDB-client MariaDB-backup -y'
 
         install.preFlightsChecks.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
@@ -379,7 +413,7 @@ gpgcheck=1
                 passwordCMD = "use mysql;DROP DATABASE IF EXISTS test;DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%%';GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' IDENTIFIED BY '%s';flush privileges;" % (
                     InstallCyberPanel.mysql_Root_password)
 
-            command = 'mysql -u root -e "' + passwordCMD + '"'
+            command = 'mariadb -u root -e "' + passwordCMD + '"'
 
             install.preFlightsChecks.call(command, self.distro, command, command, 0, 0, os.EX_OSERR)
 
