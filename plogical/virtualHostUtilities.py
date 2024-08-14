@@ -55,8 +55,6 @@ class virtualHostUtilities:
 
 
 
-
-
     @staticmethod
     def OnBoardingHostName(Domain, tempStatusPath, skipRDNSCheck):
         import json
@@ -1507,6 +1505,12 @@ class virtualHostUtilities:
                 else:
                     vhost.perHostVirtualConf(completePathToConfigFile, website.adminEmail, website.externalApp,
                                              phpVersion, virtualHostName, 0)
+
+                    sslFCPath = f'/etc/letsencrypt/live/{virtualHostName}/fullchain.pem'
+
+                    if os.path.exists(sslFCPath):
+                        sslUtilities.sslUtilities.installSSLForDomain(virtualHostName, website.adminEmail)
+
                 logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Restarting server..,90')
                 installUtilities.installUtilities.reStartLiteSpeed()
                 logging.CyberCPLogFileWriter.statusWriter(tempStatusPath, 'Successfully converted. [200]')
