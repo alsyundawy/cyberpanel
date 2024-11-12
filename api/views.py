@@ -48,7 +48,6 @@ def verifyConn(request):
                 data_ret = {"verifyConn": 0}
                 json_data = json.dumps(data_ret)
                 return HttpResponse(json_data)
-
     except BaseException as msg:
         data_ret = {'verifyConn': 0, 'error_message': str(msg)}
         json_data = json.dumps(data_ret)
@@ -91,7 +90,6 @@ def getPackagesListAPI(request):
         data_ret = {"status": 0, 'error_message': "Could not authorize access to API"}
         json_data = json.dumps(data_ret)
         return HttpResponse(json_data)
-
 
 @csrf_exempt
 def getUserInfo(request):

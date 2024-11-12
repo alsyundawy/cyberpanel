@@ -18,7 +18,7 @@ import random
 import string
 
 VERSION = '2.3'
-BUILD = 6
+BUILD = 8
 
 CENTOS7 = 0
 CENTOS8 = 1
@@ -39,7 +39,7 @@ class Upgrade:
     UbuntuPath = '/etc/lsb-release'
     openEulerPath = '/etc/openEuler-release'
     FromCloud = 0
-    SnappyVersion = '2.33.0'
+    SnappyVersion = '2.38.2'
     LogPathNew = '/home/cyberpanel/upgrade_logs'
     SoftUpgrade = 0
 
@@ -2291,7 +2291,10 @@ CREATE TABLE `websiteFunctions_backupsv2` (`id` integer AUTO_INCREMENT NOT NULL 
                     os.remove(lscpdPath)
 
                 try:
-                    result = subprocess.run('uname -a', capture_output=True, text=True, shell=True)
+                    try:
+                        result = subprocess.run('uname -a', capture_output=True, universal_newlines=True, shell=True)
+                    except:
+                        result = subprocess.run('uname -a', stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
 
                     if result.stdout.find('aarch64') == -1:
                         lscpdSelection = 'lscpd-0.3.1'
@@ -2682,6 +2685,9 @@ echo $oConfig->Save() ? 'Done' : 'Error';
                 command = 'yum install lsphp82* -y'
                 subprocess.call(command, shell=True)
 
+            command = 'yum install lsphp83* -y'
+            subprocess.call(command, shell=True)
+
         except:
             command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install ' \
                       'lsphp7? lsphp7?-common lsphp7?-curl lsphp7?-dev lsphp7?-imap lsphp7?-intl lsphp7?-json ' \
@@ -2696,6 +2702,9 @@ echo $oConfig->Save() ? 'Done' : 'Error';
             os.system(command)
 
             command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp82*'
+            os.system(command)
+
+            command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp83*'
             os.system(command)
 
         CentOSPath = '/etc/redhat-release'
@@ -3098,8 +3107,13 @@ vmail
             php81Path = '/etc/opt/remi/php81/php-fpm.d/'
             php82Path = '/etc/opt/remi/php82/php-fpm.d/'
 
+            php83Path = '/etc/opt/remi/php83/php-fpm.d/'
+            php84Path = '/etc/opt/remi/php84/php-fpm.d/'
+            php85Path = '/etc/opt/remi/php85/php-fpm.d/'
+
             serviceName = 'httpd'
             sockPath = '/var/run/php-fpm/'
+            runAsUser = 'apache'
         else:
             serverRootPath = '/etc/apache2'
             configBasePath = '/etc/apache2/sites-enabled/'
@@ -3116,9 +3130,13 @@ vmail
             php80Path = '/etc/php/8.0/fpm/pool.d/'
             php81Path = '/etc/php/8.1/fpm/pool.d/'
             php82Path = '/etc/php/8.2/fpm/pool.d/'
+            php83Path = '/etc/php/8.3/fpm/pool.d/'
+            php84Path = '/etc/php/8.4/fpm/pool.d/'
+            php85Path = '/etc/php/8.5/fpm/pool.d/'
 
             serviceName = 'apache2'
             sockPath = '/var/run/php/'
+            runAsUser = 'www-data'
 
         #####
 
@@ -3128,11 +3146,11 @@ vmail
         if os.path.exists(php54Path):
             content = f"""
 [php54default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php5.4-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3146,11 +3164,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php55Path):
             content = f'''
 [php55default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php5.5-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3164,11 +3182,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php56Path):
             content = f'''
 [php56default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php5.6-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3182,11 +3200,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php70Path):
             content = f'''
 [php70default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php7.0-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3200,11 +3218,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php71Path):
             content = f'''
 [php71default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php7.1-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3218,11 +3236,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php72Path):
             content = f'''
 [php72default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php7.2-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3236,11 +3254,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php73Path):
             content = f'''
 [php73default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php7.3-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3254,11 +3272,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php74Path):
             content = f'''
 [php74default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php7.4-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3272,11 +3290,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php80Path):
             content = f'''
 [php80default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php8.0-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3291,11 +3309,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php81Path):
             content = f'''
 [php81default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php8.1-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3309,11 +3327,11 @@ pm.max_spare_servers = 3
         if os.path.exists(php82Path):
             content = f'''
 [php82default]
-user = www-data
-group = www-data
+user = {runAsUser}
+group = {runAsUser}
 listen ={sockPath}php8.2-fpm.sock
-listen.owner = www-data
-listen.group = www-data
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
 pm = dynamic
 pm.max_children = 5
 pm.start_servers = 2
@@ -3322,6 +3340,60 @@ pm.max_spare_servers = 3
             
 '''
             WriteToFile = open(f'{php82Path}www.conf', 'w')
+            WriteToFile.write(content)
+            WriteToFile.close()
+
+        if os.path.exists(php83Path):
+            content = f'''
+[php83default]
+user = {runAsUser}
+group = {runAsUser}
+listen ={sockPath}php8.3-fpm.sock
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+'''
+            WriteToFile = open(f'{php83Path}www.conf', 'w')
+            WriteToFile.write(content)
+            WriteToFile.close()
+
+        if os.path.exists(php84Path):
+            content = f'''
+[php84default]
+user = {runAsUser}
+group = {runAsUser}
+listen ={sockPath}php8.4-fpm.sock
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+'''
+            WriteToFile = open(f'{php84Path}www.conf', 'w')
+            WriteToFile.write(content)
+            WriteToFile.close()
+
+        if os.path.exists(php85Path):
+            content = f'''
+[php85default]
+user = {runAsUser}
+group = {runAsUser}
+listen ={sockPath}php8.5-fpm.sock
+listen.owner = {runAsUser}
+listen.group = {runAsUser}
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+'''
+            WriteToFile = open(f'{php85Path}www.conf', 'w')
             WriteToFile.write(content)
             WriteToFile.close()
 
@@ -3436,6 +3508,7 @@ pm.max_spare_servers = 3
         Upgrade.setupCLI()
         Upgrade.someDirectories()
         Upgrade.installLSCPD(branch)
+        Upgrade.FixCurrentQuoatasSystem()
 
         ### General migrations are not needed any more
 
@@ -3480,8 +3553,40 @@ pm.max_spare_servers = 3
                 pass
 
         #command = 'csf -uf'
-        command = '/etc/csf/uninstall.sh'
-        Upgrade.executioner(command, 'fix csf if there', 0)
+        #Upgrade.executioner(command, 'fix csf if there', 0)
+
+        if os.path.exists('/etc/csf'):
+            execPath = "sudo /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/csf.py"
+            execPath = execPath + " removeCSF"
+            Upgrade.executioner(execPath, 'fix csf if there', 0)
+
+            execPath = "sudo /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/csf.py"
+            execPath = execPath + " installCSF"
+            Upgrade.executioner(execPath, 'fix csf if there', 0)
+
+
+
+        # if os.path.exists('/usr/local/CyberCP/configservercsf'):
+        #     command = 'rm -f /usr/local/CyberCP/configservercsf/signals.py'
+        #     Upgrade.executioner(command, 'remove /usr/local/CyberCP/configservercsf/signals.py', 1)
+        #
+        #
+        # sed_commands = [
+        #     'sed -i "s/url(r\'^configservercsf/path(\'configservercsf/g" /usr/local/CyberCP/CyberCP/urls.py',
+        #     'sed -i "s/from django.conf.urls import url/from django.urls import path/g" /usr/local/CyberCP/configservercsf/urls.py',
+        #     'sed -i "s/import signals/import configservercsf.signals/g" /usr/local/CyberCP/configservercsf/apps.py',
+        #     'sed -i "s/url(r\'^$\'/path(\'\'/g" /usr/local/CyberCP/configservercsf/urls.py',
+        #     'sed -i "s|url(r\'^iframe/$\'|path(\'iframe/\'|g" /usr/local/CyberCP/configservercsf/urls.py',
+        #     'sed -i -E "s/from.*, response/from plogical.httpProc import httpProc/g" /usr/local/CyberCP/configservercsf/views.py'
+        #     '''sed -i -E "s#^(\s*)return render.*index\.html.*#\1proc = httpProc(request, 'configservercsf/index.html', None, 'admin')\n\1return proc.render()#g" /usr/local/CyberCP/configservercsf/views.py'''
+        #     'killall lswsgi'
+        # ]
+        #
+        # for cmd in sed_commands:
+        #     Upgrade.executioner(cmd, 'fix csf if there', 1)
+
+
+
         command = 'systemctl stop cpssh'
         Upgrade.executioner(command, 'fix csf if there', 0)
         Upgrade.AutoUpgradeAcme()
@@ -3508,6 +3613,14 @@ pm.max_spare_servers = 3
             command = 'chmod +x /usr/local/CyberCP/public/imunifyav/bin/execute.py'
             Upgrade.executioner(command, command, 1)
 
+        imfExecutePath = '/usr/local/CyberCP/public/imunify/bin/execute.py'
+        if os.path.exists(imfExecutePath):
+            command = f'chmod 755 {imfExecutePath}'
+            Upgrade.executioner(command, command, 0)
+
+
+        Upgrade.installDNS_CyberPanelACMEFile()
+
         Upgrade.stdOut("Upgrade Completed.")
 
         ### remove log file path incase its there
@@ -3516,6 +3629,297 @@ pm.max_spare_servers = 3
             time.sleep(30)
             if os.path.exists(Upgrade.LogPathNew):
                 os.remove(Upgrade.LogPathNew)
+
+    @staticmethod
+    def installQuota():
+        try:
+
+            if Upgrade.FindOperatingSytem() == CENTOS7 or Upgrade.FindOperatingSytem() == CENTOS8\
+                    or Upgrade.FindOperatingSytem() == openEuler20 or Upgrade.FindOperatingSytem() == openEuler22:
+                command = "yum install quota -y"
+                Upgrade.executioner(command, command, 0, True)
+
+                if Upgrade.edit_fstab('/', '/') == 0:
+                    print("Quotas will not be abled as we failed to modify fstab file.")
+                    return 0
+
+
+                command = 'mount -o remount /'
+                try:
+                    mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                except:
+                    mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                            universal_newlines=True, shell=True)
+
+                if mResult.returncode != 0:
+                    fstab_path = '/etc/fstab'
+                    backup_path = fstab_path + '.bak'
+                    if os.path.exists(fstab_path):
+                        os.remove(fstab_path)
+                    shutil.copy(backup_path, fstab_path)
+
+                    print("Re-mount failed, restoring original FSTab and existing quota setup.")
+                    return 0
+
+            ##
+
+            if Upgrade.FindOperatingSytem() == Ubuntu22 or Upgrade.FindOperatingSytem() == Ubuntu18 \
+                    or Upgrade.FindOperatingSytem() == Ubuntu20:
+
+                print("Install Quota on Ubuntu")
+                command = 'apt update -y'
+                Upgrade.executioner(command, command, 0, True)
+
+                command = 'apt install quota -y'
+                Upgrade.executioner(command, command, 0, True)
+
+                command = "find /lib/modules/ -type f -name '*quota_v*.ko*'"
+
+
+                if subprocess.check_output(command,shell=True).decode("utf-8").find("quota/") == -1:
+                    command = "sudo apt install linux-image-extra-virtual -y"
+                    Upgrade.executioner(command, command, 0, True)
+
+                if Upgrade.edit_fstab('/', '/') == 0:
+                    print("Quotas will not be abled as we are are failed to modify fstab file.")
+                    return 0
+
+                command = 'mount -o remount /'
+                try:
+                    mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                except:
+                    mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                             universal_newlines=True, shell=True)
+                if mResult.returncode != 0:
+                    fstab_path = '/etc/fstab'
+                    backup_path = fstab_path + '.bak'
+                    if os.path.exists(fstab_path):
+                        os.remove(fstab_path)
+                    shutil.copy(backup_path, fstab_path)
+
+                    print("Re-mount failed, restoring original FSTab and existing quota setup.")
+                    return 0
+
+                command = 'quotacheck -ugm /'
+                try:
+                    mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                except:
+                    mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                             universal_newlines=True, shell=True)
+                if mResult.returncode != 0:
+                    fstab_path = '/etc/fstab'
+                    backup_path = fstab_path + '.bak'
+                    if os.path.exists(fstab_path):
+                        os.remove(fstab_path)
+                    shutil.copy(backup_path, fstab_path)
+
+                    print("Re-mount failed, restoring original FSTab and existing quota setup.")
+                    return 0
+
+                ####
+
+                command = "find /lib/modules/ -type f -name '*quota_v*.ko*'"
+                try:
+                    iResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                except:
+                    iResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                             universal_newlines=True, shell=True)
+                print(repr(iResult.stdout))
+
+                # Only if the first command works, run the rest
+
+                if iResult.returncode == 0:
+                    command = "echo '{}' | sed -n 's|/lib/modules/\\([^/]*\\)/.*|\\1|p' | sort -u".format(iResult.stdout)
+                    try:
+                        result = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                    except:
+                        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                 universal_newlines=True, shell=True)
+                    fResult = result.stdout.rstrip('\n')
+                    print(repr(result.stdout.rstrip('\n')))
+
+                    command  = 'uname -r'
+                    try:
+                        ffResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                    except:
+                        ffResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                universal_newlines=True, shell=True)
+                    ffResult = ffResult.stdout.rstrip('\n')
+
+                    command = f"apt-get install linux-modules-extra-{ffResult}"
+                    Upgrade.executioner(command, command, 0, True)
+
+                ###
+
+                    command = f'modprobe quota_v1 -S {ffResult}'
+                    try:
+                        mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                    except:
+                        mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                  universal_newlines=True, shell=True)
+                    if mResult.returncode != 0:
+                        fstab_path = '/etc/fstab'
+                        backup_path = fstab_path + '.bak'
+                        if os.path.exists(fstab_path):
+                            os.remove(fstab_path)
+                        shutil.copy(backup_path, fstab_path)
+
+                        print("Re-mount failed, restoring original FSTab and existing quota setup.")
+                        return 0
+
+                    command = f'modprobe quota_v2 -S {ffResult}'
+                    try:
+                        mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                    except:
+                        mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                 universal_newlines=True, shell=True)
+                    if mResult.returncode != 0:
+                        fstab_path = '/etc/fstab'
+                        backup_path = fstab_path + '.bak'
+                        if os.path.exists(fstab_path):
+                            os.remove(fstab_path)
+                        shutil.copy(backup_path, fstab_path)
+
+                        print("Re-mount failed, restoring original FSTab and existing quota setup.")
+                        return 0
+
+            command = f'quotacheck -ugm /'
+            try:
+                mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+            except:
+                mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         universal_newlines=True, shell=True)
+            if mResult.returncode != 0:
+                fstab_path = '/etc/fstab'
+                backup_path = fstab_path + '.bak'
+                if os.path.exists(fstab_path):
+                    os.remove(fstab_path)
+                shutil.copy(backup_path, fstab_path)
+
+                print("Re-mount failed, restoring original FSTab and existing quota setup.")
+                return 0
+
+            command = f'quotaon -v /'
+            try:
+                mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+            except:
+                mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         universal_newlines=True, shell=True)
+            if mResult.returncode != 0:
+                fstab_path = '/etc/fstab'
+                backup_path = fstab_path + '.bak'
+                if os.path.exists(fstab_path):
+                    os.remove(fstab_path)
+                shutil.copy(backup_path, fstab_path)
+
+                print("Re-mount failed, restoring original FSTab and existing quota setup.")
+                return 0
+
+            return 1
+
+        except BaseException as msg:
+            print("[ERROR] installQuota. " + str(msg))
+            return 0
+
+    @staticmethod
+    def edit_fstab(mount_point, options_to_add):
+        try:
+            retValue = 1
+            # Backup the original fstab file
+            fstab_path = '/etc/fstab'
+            backup_path = fstab_path + '.bak'
+
+            rData = open(fstab_path, 'r').read()
+
+            if rData.find('xfs') > -1:
+                options_to_add = 'uquota'
+            else:
+                options_to_add = 'usrquota,grpquota'
+
+            if not os.path.exists(backup_path):
+                shutil.copy(fstab_path, backup_path)
+
+            # Read the fstab file
+            with open(fstab_path, 'r') as file:
+                lines = file.readlines()
+
+            # Modify the appropriate line
+            WriteToFile = open(fstab_path, 'w')
+            for i, line in enumerate(lines):
+
+                if line.find('\t') > -1:
+                    parts = line.split('\t')
+                else:
+                    parts = line.split(' ')
+
+                print(parts)
+                try:
+                    if parts[1] == '/' and parts[3].find(options_to_add) == -1 and len(parts[3]) > 4:
+
+                        parts[3] = f'{parts[3]},{options_to_add}'
+                        tempParts = [item for item in parts if item.strip()]
+                        finalString = '\t'.join(tempParts)
+                        print(finalString)
+                        WriteToFile.write(finalString)
+
+                    elif parts[1] == '/':
+
+                        for ii, p in enumerate(parts):
+                            if p.find('defaults') > -1 or p.find('discard') > -1 or p.find('errors=') > -1:
+                                parts[ii] = f'{parts[ii]},{options_to_add}'
+                                tempParts = [item for item in parts if item.strip()]
+                                finalString = '\t'.join(tempParts)
+                                print(finalString)
+                                WriteToFile.write(finalString)
+                    else:
+                        WriteToFile.write(line)
+                except:
+                    WriteToFile.write(line)
+
+            WriteToFile.close()
+
+            return retValue
+        except:
+            return 0
+
+
+    @staticmethod
+    def FixCurrentQuoatasSystem():
+        fstab_path = '/etc/fstab'
+
+        data = open(fstab_path, 'r').read()
+
+        if data.find("usrquota,grpquota") > -1 or data.find("uquota") > -1:
+            print("Quotas already enabled.")
+
+
+        if Upgrade.installQuota() == 1:
+
+            print("We will attempt to bring new Quota system to old websites.")
+            from websiteFunctions.models import Websites
+            for website in Websites.objects.all():
+
+                command = 'chattr -R -i /home/%s/' % (website.domain)
+                Upgrade.executioner(command, command, 0, True)
+
+                if website.package.enforceDiskLimits:
+                    spaceString = f'{website.package.diskSpace}M {website.package.diskSpace}M'
+                    command = f'setquota -u {website.externalApp} {spaceString} 0 0 /'
+                    Upgrade.executioner(command, command, 0, True)
+
+        else:
+            print("Quotas can not be enabled continue to use chhtr.")
+
+    @staticmethod
+    def installDNS_CyberPanelACMEFile():
+        filePath = '/root/.acme.sh/dns_cyberpanel.sh'
+        if os.path.exists(filePath):
+            os.remove(filePath)
+        shutil.copy('/usr/local/CyberCP/install/dns_cyberpanel.sh', filePath)
+
+        command = f'chmod +x {filePath}'
+        Upgrade.executioner(command, command, 0, True)
+
 
 
 def main():

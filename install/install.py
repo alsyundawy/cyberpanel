@@ -15,7 +15,7 @@ from stat import *
 import stat
 
 VERSION = '2.3'
-BUILD = 6
+BUILD = 8
 
 char_set = {'small': 'abcdefghijklmnopqrstuvwxyz', 'nums': '0123456789', 'big': 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'}
 
@@ -126,7 +126,7 @@ class preFlightsChecks:
     debug = 1
     cyberPanelMirror = "mirror.cyberpanel.net/pip"
     cdn = 'cyberpanel.sh'
-    SnappyVersion = '2.33.0'
+    SnappyVersion = '2.38.2'
 
     def __init__(self, rootPath, ip, path, cwd, cyberPanelPath, distro, remotemysql=None, mysqlhost=None, mysqldb=None,
                  mysqluser=None, mysqlpassword=None, mysqlport=None):
@@ -144,48 +144,192 @@ class preFlightsChecks:
         self.mysqldb = mysqldb
 
 
-    @staticmethod
-    def edit_fstab(mount_point, options_to_add):
-        # Backup the original fstab file
-        fstab_path = '/etc/fstab'
-        backup_path = fstab_path + '.bak'
+    def installQuota(self,):
+        try:
 
-        if not os.path.exists(backup_path):
-            shutil.copy(fstab_path, backup_path)
-            preFlightsChecks.stdOut(f"Backup of /etc/fstab created at " + backup_path, 0)
+            if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
+                command = "yum install quota -y"
+                preFlightsChecks.call(command, self.distro, command,
+                                      command,
+                                      1, 0, os.EX_OSERR)
 
-        # Read the fstab file
-        with open(fstab_path, 'r') as file:
-            lines = file.readlines()
+                if self.edit_fstab('/', '/') == 0:
+                    preFlightsChecks.stdOut("Quotas will not be abled as we failed to modify fstab file.")
+                    return 0
 
-        # Modify the appropriate line
-        modified = False
-        for i, line in enumerate(lines):
-            parts = line.split()
 
-            # Ensure the line has at least 2 fields and matches the root mount point
-            if len(parts) > 1 and parts[1] == mount_point:
-                # Check that the first field is a UUID or a device (not /proc, etc.)
-                if parts[0].startswith("UUID=") or parts[0].startswith("/dev/"):
-                    # Check if options already exist
-                    if options_to_add in parts[3]:
-                        preFlightsChecks.stdOut(f"{options_to_add} already present in {mount_point} entry", 0)
-                        return
-                    # Append options to the fourth column (mount options)
-                    parts[3] = parts[3] + ',' + options_to_add
-                    lines[i] = ' '.join(parts) + '\n'
-                    modified = True
-                    preFlightsChecks.stdOut(f"Modified the entry for {mount_point}", 0)
-                    break
+                command = 'mount -o remount /'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-        # If the mount point was found and modified, write back the file
-        if modified:
-            with open(fstab_path, 'w') as file:
-                file.writelines(lines)
+                command = 'mount -o remount /'
+                try:
+                    mResult = subprocess.run(command, capture_output=True,universal_newlines=True, shell=True)
+                except:
+                    mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
 
-            preFlightsChecks.stdOut("fstab file updated successfully.", 0)
-        else:
-            preFlightsChecks.stdOut(f"No entry found for {mount_point} in /etc/fstab.", 0)
+                if mResult.returncode != 0:
+                    fstab_path = '/etc/fstab'
+                    backup_path = fstab_path + '.bak'
+                    if os.path.exists(fstab_path):
+                        os.remove(fstab_path)
+                    shutil.copy(backup_path, fstab_path)
+
+                    preFlightsChecks.stdOut("Re-mount failed, restoring original FSTab and existing quota setup.")
+                    return 0
+
+
+
+            ##
+
+            if self.distro == ubuntu:
+                self.stdOut("Install Quota on Ubuntu")
+                command = 'apt update -y'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+                command = 'DEBIAN_FRONTEND=noninteractive apt install quota -y'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
+
+                command = "find /lib/modules/ -type f -name '*quota_v*.ko*'"
+
+
+                if subprocess.check_output(command,shell=True).decode("utf-8").find("quota/") == -1:
+                    command = "DEBIAN_FRONTEND=noninteractive apt install linux-image-extra-virtual -y"
+                    preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
+
+                if self.edit_fstab('/', '/') == 0:
+                    preFlightsChecks.stdOut("Quotas will not be abled as we are are failed to modify fstab file.")
+                    return 0
+
+                command = 'mount -o remount /'
+                try:
+                    mResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                except:
+                    mResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                             universal_newlines=True, shell=True)
+
+                if mResult.returncode != 0:
+                    fstab_path = '/etc/fstab'
+                    backup_path = fstab_path + '.bak'
+                    if os.path.exists(fstab_path):
+                        os.remove(fstab_path)
+                    shutil.copy(backup_path, fstab_path)
+
+                    preFlightsChecks.stdOut("Re-mount failed, restoring original FSTab and existing quota setup.")
+                    return 0
+
+                command = 'quotacheck -ugm /'
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+                ####
+
+                command = "find /lib/modules/ -type f -name '*quota_v*.ko*'"
+                try:
+                    iResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                except:
+                    iResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                             universal_newlines=True, shell=True)
+
+                print(repr(iResult.stdout))
+
+                # Only if the first command works, run the rest
+
+                if iResult.returncode == 0:
+                    command = "echo '{}' | sed -n 's|/lib/modules/\\([^/]*\\)/.*|\\1|p' | sort -u".format(iResult.stdout)
+                    try:
+                        result = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                    except:
+                        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
+                    fResult = result.stdout.rstrip('\n')
+                    print(repr(result.stdout.rstrip('\n')))
+
+                    command  = 'uname -r'
+                    try:
+                        ffResult = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                    except:
+                        ffResult = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
+
+                    ffResult = ffResult.stdout.rstrip('\n')
+
+                    command = f"DEBIAN_FRONTEND=noninteractive  apt-get install linux-modules-extra-{ffResult}"
+                    preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
+
+                ###
+
+                    command = f'modprobe quota_v1 -S {ffResult}'
+                    preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+                    command = f'modprobe quota_v2 -S {ffResult}'
+                    preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            command = f'quotacheck -ugm /'
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            command = f'quotaon -v /'
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        except BaseException as msg:
+            logging.InstallLog.writeToFile("[ERROR] installQuota. " + str(msg))
+
+    def edit_fstab(self,mount_point, options_to_add):
+
+        try:
+            retValue = 1
+            # Backup the original fstab file
+            fstab_path = '/etc/fstab'
+            backup_path = fstab_path + '.bak'
+
+            rData = open(fstab_path, 'r').read()
+
+            if rData.find('xfs') > -1:
+                options_to_add = 'uquota'
+            else:
+                options_to_add = 'usrquota,grpquota'
+
+            if not os.path.exists(backup_path):
+                shutil.copy(fstab_path, backup_path)
+
+            # Read the fstab file
+            with open(fstab_path, 'r') as file:
+                lines = file.readlines()
+
+            # Modify the appropriate line
+            WriteToFile = open(fstab_path, 'w')
+            for i, line in enumerate(lines):
+
+                if line.find('\t') > -1:
+                    parts = line.split('\t')
+                else:
+                    parts = line.split(' ')
+
+                print(parts)
+                try:
+                    if parts[1] == '/' and parts[3].find(options_to_add) == -1 and len(parts[3]) > 4:
+
+                        parts[3] = f'{parts[3]},{options_to_add}'
+                        tempParts = [item for item in parts if item.strip()]
+                        finalString = '\t'.join(tempParts)
+                        print(finalString)
+                        WriteToFile.write(finalString)
+
+                    elif parts[1] == '/':
+
+                        for ii, p in enumerate(parts):
+                            if p.find('defaults') > -1 or p.find('discard') > -1 or p.find('errors=') > -1:
+                                parts[ii] = f'{parts[ii]},{options_to_add}'
+                                tempParts = [item for item in parts if item.strip()]
+                                finalString = '\t'.join(tempParts)
+                                print(finalString)
+                                WriteToFile.write(finalString)
+                    else:
+                        WriteToFile.write(line)
+                except:
+                    WriteToFile.write(line)
+
+            WriteToFile.close()
+
+            return retValue
+        except:
+            return 0
 
     @staticmethod
     def stdOut(message, log=0, do_exit=0, code=os.EX_OK):
@@ -204,6 +348,19 @@ class preFlightsChecks:
 
     def mountTemp(self):
         try:
+
+            try:
+                result = subprocess.run('systemd-detect-virt', capture_output=True, universal_newlines=True, shell=True)
+            except:
+                result = subprocess.run('systemd-detect-virt', stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
+
+            if result.stdout.find('openvz') > -1:
+                if self.distro == ubuntu:
+                    command = 'DEBIAN_FRONTEND=noninteractive apt install inetutils-inetd -y'
+                    preFlightsChecks.call(command, self.distro, command,
+                                          command,
+                                          1, 0, os.EX_OSERR)
+
             # ## On OpenVZ there is an issue using .tempdisk for /tmp as it breaks network on container after reboot.
             #
             # if subprocess.check_output('systemd-detect-virt').decode("utf-8").find("openvz") > -1:
@@ -1642,7 +1799,10 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             #     lscpdSelection = 'lscpd.aarch64'
 
             try:
-                result = subprocess.run('uname -a', capture_output=True, text=True, shell=True)
+                try:
+                    result = subprocess.run('uname -a', capture_output=True, universal_newlines=True, shell=True)
+                except:
+                    result = subprocess.run('uname -a', stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
 
                 if result.stdout.find('aarch64') == -1:
                     lscpdSelection = 'lscpd-0.3.1'
@@ -2450,6 +2610,16 @@ vmail
             writeToFile.close()
 
 
+    def installDNS_CyberPanelACMEFile(self):
+
+        os.chdir(self.cwd)
+
+        filePath = '/root/.acme.sh/dns_cyberpanel.sh'
+        shutil.copy('dns_cyberpanel.sh', filePath)
+
+        command = f'chmod +x {filePath}'
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
 def main():
     parser = argparse.ArgumentParser(description='CyberPanel Installer')
     parser.add_argument('publicip', help='Please enter public IP for your VPS or dedicated server.')
@@ -2529,6 +2699,7 @@ def main():
     checks = preFlightsChecks("/usr/local/lsws/", args.publicip, "/usr/local", cwd, "/usr/local/CyberCP", distro,
                               remotemysql, mysqlhost, mysqldb, mysqluser, mysqlpassword, mysqlport)
     checks.mountTemp()
+    checks.installQuota()
 
     if args.port is None:
         port = "8090"
@@ -2600,6 +2771,7 @@ def main():
     checks.setupPort()
     checks.setupPythonWSGI()
     checks.setupLSCPDDaemon()
+    checks.installDNS_CyberPanelACMEFile()
 
     if args.redis is not None:
         checks.installRedis()

@@ -448,6 +448,7 @@ class IncScheduler(multi.Thread):
                                             logging.writeToFile(f'Retention time {timerrtention}')
                                         except:
                                             print(f'Retention time not defined.')
+                                            timerrtention = '6m'
 
                                         if (timerrtention == '1d'):
                                             new = CUrrenttimestamp - float(86400)
@@ -618,8 +619,11 @@ Automatic backup failed for %s on %s.
                                                     domain, time.strftime("%m.%d.%Y_%H-%M-%S"))).save()
 
                     jobConfig = json.loads(backupjob.config)
-                    if jobConfig['pid']:
-                        del jobConfig['pid']
+                    try:
+                        if jobConfig['pid']:
+                            del jobConfig['pid']
+                    except:
+                        pass
                     jobConfig[IncScheduler.currentStatus] = 'Not running'
                     backupjob.config = json.dumps(jobConfig)
                     backupjob.save()
@@ -1041,25 +1045,28 @@ Automatic backup failed for %s on %s.
                 config['DiskUsage'], config['DiskUsagePercentage'] = virtualHostUtilities.getDiskUsage(
                     "/home/" + website.domain, website.package.diskSpace)
 
-                if website.package.enforceDiskLimits:
-                    if config['DiskUsagePercentage'] >= 100:
-                        command = 'chattr -R +i /home/%s/' % (website.domain)
-                        ProcessUtilities.executioner(command)
-
-                        command = 'chattr -R -i /home/%s/logs/' % (website.domain)
-                        ProcessUtilities.executioner(command)
-
-                        command = 'chattr -R -i /home/%s/.trash/' % (website.domain)
-                        ProcessUtilities.executioner(command)
-
-                        command = 'chattr -R -i /home/%s/backup/' % (website.domain)
-                        ProcessUtilities.executioner(command)
-
-                        command = 'chattr -R -i /home/%s/incbackup/' % (website.domain)
-                        ProcessUtilities.executioner(command)
-                    else:
-                        command = 'chattr -R -i /home/%s/' % (website.domain)
-                        ProcessUtilities.executioner(command)
+                # if website.package.enforceDiskLimits:
+                #     spaceString = f'{website.package.diskSpace}M {website.package.diskSpace}M'
+                #     command = f'setquota -u {website.externalApp} {spaceString} 0 0 /'
+                #     ProcessUtilities.executioner(command)
+                #     if config['DiskUsagePercentage'] >= 100:
+                #         command = 'chattr -R +i /home/%s/' % (website.domain)
+                #         ProcessUtilities.executioner(command)
+                #
+                #         command = 'chattr -R -i /home/%s/logs/' % (website.domain)
+                #         ProcessUtilities.executioner(command)
+                #
+                #         command = 'chattr -R -i /home/%s/.trash/' % (website.domain)
+                #         ProcessUtilities.executioner(command)
+                #
+                #         command = 'chattr -R -i /home/%s/backup/' % (website.domain)
+                #         ProcessUtilities.executioner(command)
+                #
+                #         command = 'chattr -R -i /home/%s/incbackup/' % (website.domain)
+                #         ProcessUtilities.executioner(command)
+                #     else:
+                #         command = 'chattr -R -i /home/%s/' % (website.domain)
+                #         ProcessUtilities.executioner(command)
 
                 ## Calculate bw usage
 
@@ -1111,18 +1118,18 @@ Automatic backup failed for %s on %s.
     @staticmethod
     def RemoteBackup(function):
         try:
-            # print("....start remote backup...............")
+            print("....start remote backup...............")
             from websiteFunctions.models import RemoteBackupSchedule, RemoteBackupsites, WPSites
             from loginSystem.models import Administrator
             import json
             import time
             from plogical.applicationInstaller import ApplicationInstaller
             for config in RemoteBackupSchedule.objects.all():
-                # print("....start remote backup........site.......%s"%config.Name)
+                print("....start remote backup........site.......%s"%config.Name)
                 try:
                     configbakup = json.loads(config.config)
                     backuptype = configbakup['BackupType']
-                    # print("....start remote backup........site.......%s.. and bakuptype...%s" % (config.Name, backuptype))
+                    print("....start remote backup........site.......%s.. and bakuptype...%s" % (config.Name, backuptype))
                     if backuptype == 'Only DataBase':
                         Backuptype = "3"
                     elif backuptype == 'Only Website':
@@ -1134,12 +1141,12 @@ Automatic backup failed for %s on %s.
                     continue
                 try:
                     allRemoteBackupsiteobj = RemoteBackupsites.objects.filter(owner=config)
-                    # print("store site id.....%s"%str(allRemoteBackupsiteobj))
+                    print("store site id.....%s"%str(allRemoteBackupsiteobj))
                     for i in allRemoteBackupsiteobj:
                         try:
                             backupsiteID = i.WPsites
                             wpsite = WPSites.objects.get(pk=backupsiteID)
-                            # print("site name.....%s"%wpsite.title)
+                            print("site name.....%s"%wpsite.title)
                             AdminID = wpsite.owner.admin_id
                             Admin = Administrator.objects.get(pk=AdminID)
 
@@ -1395,23 +1402,42 @@ Automatic backup failed for %s on %s.
             Password = config['Password']
             Path = config['Path']
 
-            cnopts = sftp.CnOpts()
-            cnopts.hostkeys = None
+            # Connect to the remote server using the private key
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-            with pysftp.Connection(HostName, username=Username, password=Password, cnopts=cnopts) as sftp:
-                print("Connection succesfully stablished ... ")
+            # Connect to the server using the private key
+            ssh.connect(HostName, username=Username, password=Password)
+            sftp = ssh.open_sftp()
+            ssh.exec_command(f'mkdir -p {Path}')
 
-                try:
-                    with sftp.cd(Path):
-                        sftp.put(FileName)
-                except:
-                    sftp.mkdir(Path)
-                    with sftp.cd(Path):
-                        sftp.put(FileName)
+            if os.path.exists(ProcessUtilities.debugPath):
+                logging.writeToFile(f"Filename: {FileName}, Path {Path}/{FileName.split('/')[-1]}. [SendTORemote]")
+
+            sftp.put(FileName, f"{Path}/{FileName.split('/')[-1]}")
+
+            # sftp.get(str(remotepath), str(loaclpath),
+            #          callback=self.UpdateDownloadStatus)
+            #
+            # cnopts = sftp.CnOpts()
+            # cnopts.hostkeys = None
+            #
+            # with pysftp.Connection(HostName, username=Username, password=Password, cnopts=cnopts) as sftp:
+            #     print("Connection succesfully stablished ... ")
+            #
+            #     try:
+            #         with sftp.cd(Path):
+            #             sftp.put(FileName)
+            #     except BaseException as msg:
+            #         print(f'Error on {str(msg)}')
+            #         sftp.mkdir(Path)
+            #         with sftp.cd(Path):
+            #             sftp.put(FileName)
 
 
 
         except BaseException as msg:
+            print('%s. [SendTORemote]' % (str(msg)))
             logging.writeToFile('%s. [SendTORemote]' % (str(msg)))
 
     @staticmethod

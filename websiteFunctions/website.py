@@ -99,6 +99,10 @@ class WebsiteManager:
             currentACL = ACLManager.loadedACL(userID)
             adminNames = ACLManager.loadAllUsers(userID)
             packagesName = ACLManager.loadPackages(userID, currentACL)
+
+            if len(packagesName) == 0:
+                packagesName = ['Default']
+
             FinalVersions = []
             userobj = Administrator.objects.get(pk=userID)
             counter = 0
@@ -126,7 +130,7 @@ class WebsiteManager:
             Data = {'packageList': packagesName, "owernList": adminNames, 'WPVersions': FinalVersions,
                     'Plugins': Plugins, 'Randam_String': rnpss.lower(), 'test_domain_data': test_domain_status}
             proc = httpProc(request, 'websiteFunctions/WPCreate.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -203,14 +207,14 @@ class WebsiteManager:
                     da = str(msg)
 
                 proc = httpProc(request, 'websiteFunctions/WPsiteHome.html',
-                                Data, 'createWebsite')
+                                Data, 'createDatabase')
                 return proc.render()
             else:
                 from django.shortcuts import reverse
                 return redirect(reverse('pricing'))
         except:
             proc = httpProc(request, 'websiteFunctions/WPsiteHome.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
 
     def RestoreHome(self, request=None, userID=None, BackupID=None):
@@ -231,11 +235,18 @@ class WebsiteManager:
             Data['FileName'] = config['name']
             try:
                 Data['Backuptype'] = config['Backuptype']
+
+                if Data['Backuptype'] == 'DataBase Backup' or Data['Backuptype'] == 'Website Backup':
+                    Data['WPsites'] = [WPSites.objects.get(pk=Data['backupobj'].WPSiteID)]
+                else:
+                    Data['WPsites'] = ACLManager.GetALLWPObjects(currentACL, userID)
+
             except:
                 Data['Backuptype'] = None
-            Data['WPsites'] = ACLManager.GetALLWPObjects(currentACL, userID)
+                Data['WPsites'] = ACLManager.GetALLWPObjects(currentACL, userID)
+
             proc = httpProc(request, 'websiteFunctions/WPRestoreHome.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -284,7 +295,7 @@ class WebsiteManager:
                         })
 
             proc = httpProc(request, 'websiteFunctions/RemoteBackupConfig.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -320,7 +331,7 @@ class WebsiteManager:
                     'LastRun': LastRun
                 })
             proc = httpProc(request, 'websiteFunctions/BackupfileConfig.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -355,7 +366,7 @@ class WebsiteManager:
                 except:
                     pass
             proc = httpProc(request, 'websiteFunctions/AddRemoteBackupSite.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -385,10 +396,10 @@ class WebsiteManager:
 
             backobj = WPSitesBackup.objects.filter(owner=admin).order_by('-id')
 
-            if ACLManager.CheckIPBackupObjectOwner(currentACL, backobj, admin) == 1:
-                pass
-            else:
-                return ACLManager.loadError()
+            # if ACLManager.CheckIPBackupObjectOwner(currentACL, backobj, admin) == 1:
+            #     pass
+            # else:
+            #     return ACLManager.loadError()
 
             try:
                 if DeleteID != None:
@@ -429,7 +440,7 @@ class WebsiteManager:
                 })
 
             proc = httpProc(request, 'websiteFunctions/RestoreBackups.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -488,7 +499,7 @@ class WebsiteManager:
             data['password'] = password
 
             proc = httpProc(request, 'websiteFunctions/AutoLogin.html',
-                            data, 'createWebsite')
+                            data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -505,7 +516,7 @@ class WebsiteManager:
 
             Data = {'Selectedplugins': Selectedplugins, }
             proc = httpProc(request, 'websiteFunctions/WPConfigurePlugins.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
         else:
             from django.shortcuts import reverse
@@ -521,7 +532,7 @@ class WebsiteManager:
 
             Data = {'packageList': packagesName, "owernList": adminNames, 'phps': phps}
             proc = httpProc(request, 'websiteFunctions/WPAddNewPlugin.html',
-                            Data, 'createWebsite')
+                            Data, 'createDatabase')
             return proc.render()
 
         return redirect(reverse('pricing'))
@@ -599,7 +610,7 @@ class WebsiteManager:
         Data['BucketName'] = pluginobj.Name
 
         proc = httpProc(request, 'websiteFunctions/WPEidtPlugin.html',
-                        Data, 'createWebsite')
+                        Data, 'createDatabase')
         return proc.render()
 
     def deletesPlgin(self, userID=None, data=None, ):
@@ -2217,8 +2228,8 @@ class WebsiteManager:
             execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
             execPath = execPath + " createVirtualHost --virtualHostName " + domain + \
                        " --administratorEmail " + adminEmail + " --phpVersion '" + phpSelection + \
-                       "' --virtualHostUser " + externalApp + " --ssl " + str(data['ssl']) + " --dkimCheck " \
-                       + str(data['dkimCheck']) + " --openBasedir " + str(data['openBasedir']) + \
+                       "' --virtualHostUser " + externalApp + " --ssl " + str(1) + " --dkimCheck " \
+                       + str(1) + " --openBasedir " + str(data['openBasedir']) + \
                        ' --websiteOwner "' + websiteOwner + '" --package "' + packageName + '" --tempStatusPath ' + tempStatusPath + " --apache " + apacheBackend + " --mailDomain %s" % (
                            mailDomain)
 
@@ -2319,8 +2330,7 @@ class WebsiteManager:
             execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
 
             execPath = execPath + " createDomain --masterDomain " + masterDomain + " --virtualHostName " + domain + \
-                       " --phpVersion '" + phpSelection + "' --ssl " + str(data['ssl']) + " --dkimCheck " + str(
-                data['dkimCheck']) \
+                       " --phpVersion '" + phpSelection + "' --ssl " + str(1) + " --dkimCheck " + str(1) \
                        + " --openBasedir " + str(data['openBasedir']) + ' --path ' + path + ' --websiteOwner ' \
                        + admin.userName + ' --tempStatusPath ' + tempStatusPath + " --apache " + apacheBackend + f' --aliasDomain {str(alias)}'
 
@@ -4515,6 +4525,14 @@ StrictHostKeyChecking no
             if data['home'] == '0':
                 extraArgs['path'] = data['path']
 
+            #### Before installing Prestashop change php to 8.3
+
+            completePathToConfigFile = f'/usr/local/lsws/conf/vhosts/{self.domain}/vhost.conf'
+
+            execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/virtualHostUtilities.py"
+            execPath = execPath + " changePHP --phpVersion 'PHP 8.3' --path " + completePathToConfigFile
+            ProcessUtilities.executioner(execPath)
+
             background = ApplicationInstaller('prestashop', extraArgs)
             background.start()
 
@@ -4541,10 +4559,15 @@ StrictHostKeyChecking no
             websiteOwner = data['websiteOwner']
             ownerPassword = data['ownerPassword']
             data['ssl'] = 1
-            data['dkimCheck'] = 0
+            data['dkimCheck'] = 1
             data['openBasedir'] = 1
             data['adminEmail'] = data['ownerEmail']
-            data['phpSelection'] = "PHP 7.4"
+
+            try:
+                data['phpSelection'] = data['phpSelection']
+            except:
+                data['phpSelection'] = "PHP 7.4"
+
             data['package'] = data['packageName']
             try:
                 websitesLimit = data['websitesLimit']
@@ -6600,11 +6623,15 @@ StrictHostKeyChecking no
 
             key = data['key']
             pathToKeyFile = "/home/%s/.ssh/authorized_keys" % (domain)
+            website = Websites.objects.get(domain=domain)
+
+            command = f'chown {website.externalApp}:{website.externalApp} {pathToKeyFile}'
+            ProcessUtilities.outputExecutioner(command)
 
             execPath = "/usr/local/CyberCP/bin/python " + virtualHostUtilities.cyberPanel + "/plogical/firewallUtilities.py"
             execPath = execPath + " deleteSSHKey --key '%s' --path %s" % (key, pathToKeyFile)
 
-            output = ProcessUtilities.outputExecutioner(execPath)
+            output = ProcessUtilities.outputExecutioner(execPath, website.externalApp)
 
             if output.find("1,None") > -1:
                 final_dic = {'status': 1, 'delete_status': 1}
@@ -6677,6 +6704,7 @@ StrictHostKeyChecking no
             return ACLManager.loadError()
 
         phps = PHPManager.findPHPVersions()
+        apachePHPs = PHPManager.findApachePHPVersions()
 
         if ACLManager.CheckForPremFeature('all'):
             apachemanager = 1
@@ -6684,7 +6712,7 @@ StrictHostKeyChecking no
             apachemanager = 0
 
         proc = httpProc(request, 'websiteFunctions/ApacheManager.html',
-                        {'domainName': self.domain, 'phps': phps, 'apachemanager': apachemanager})
+                        {'domainName': self.domain, 'phps': phps, 'apachemanager': apachemanager, 'apachePHPs': apachePHPs})
         return proc.render()
 
     def saveApacheConfigsToFile(self, userID=None, data=None):

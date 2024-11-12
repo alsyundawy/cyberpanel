@@ -98,8 +98,6 @@ class Docker_Sites(multi.Thread):
                 ProcessUtilities.executioner(execPath)
 
 
-
-
     def run(self):
         try:
             if self.function_run == 'DeployWPContainer':
@@ -178,9 +176,11 @@ class Docker_Sites(multi.Thread):
 
     @staticmethod
     def SetupProxy(port):
-        ConfPath = '/usr/local/lsws/conf/httpd_config.conf'
-        data = open(ConfPath, 'r').read()
+        import xml.etree.ElementTree as ET
+
         if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+            ConfPath = '/usr/local/lsws/conf/httpd_config.conf'
+            data = open(ConfPath, 'r').read()
             StringCheck = f"127.0.0.1:{port}"
             if data.find(StringCheck) == -1:
                 ProxyContent = f"""
@@ -198,6 +198,40 @@ extprocessor docker{port} {{
                 WriteToFile = open(ConfPath, 'a')
                 WriteToFile.write(ProxyContent)
                 WriteToFile.close()
+
+        else:
+            ConfPath = '/usr/local/lsws/conf/httpd_config.xml'
+            data = open(ConfPath, 'r').read()
+
+            # Parse the XML
+            root = ET.fromstring(data)
+
+            # Find the <extProcessorList> node
+            ext_processor_list = root.find('extProcessorList')
+
+            # Create the new <extProcessor> node
+            new_ext_processor = ET.Element('extProcessor')
+
+            # Add child elements to the new <extProcessor>
+            ET.SubElement(new_ext_processor, 'type').text = 'proxy'
+            ET.SubElement(new_ext_processor, 'name').text = f'docker{port}'
+            ET.SubElement(new_ext_processor, 'address').text = f'127.0.0.1:{port}'
+            ET.SubElement(new_ext_processor, 'maxConns').text = '35'
+            ET.SubElement(new_ext_processor, 'pcKeepAliveTimeout').text = '60'
+            ET.SubElement(new_ext_processor, 'initTimeout').text = '60'
+            ET.SubElement(new_ext_processor, 'retryTimeout').text = '60'
+            ET.SubElement(new_ext_processor, 'respBuffer').text = '0'
+
+            # Append the new <extProcessor> to the <extProcessorList>
+            ext_processor_list.append(new_ext_processor)
+
+            # Write the updated XML content to a new file or print it out
+            tree = ET.ElementTree(root)
+            tree.write(ConfPath, encoding='UTF-8', xml_declaration=True)
+
+            # Optionally, print the updated XML
+            ET.dump(root)
+
 
     @staticmethod
     def SetupHTAccess(port, htaccess):
@@ -233,9 +267,16 @@ REWRITERULE ^(.*)$ HTTP://docker{port}/$1 [P]
 
             command = 'docker --help'
             result = ProcessUtilities.outputExecutioner(command)
-            print(f'return code of docker install {result}')
+
+            if os.path.exists(ProcessUtilities.debugPath):
+                logging.writeToFile(f'return code of docker install {result}')
+
             if result.find("not found") > -1:
-                DockerInstall.submitInstallDocker(1)
+                if os.path.exists(ProcessUtilities.debugPath):
+                    logging.writeToFile(f'About to run docker install function...')
+
+                execPath = "/usr/local/CyberCP/bin/python /usr/local/CyberCP/dockerManager/dockerInstall.py"
+                ProcessUtilities.executioner(execPath)
 
             logging.statusWriter(self.JobID, 'Docker is ready to use..,10')
 
@@ -316,7 +357,12 @@ services:
 
             ####
 
-            command = f"docker-compose -f {self.data['ComposePath']} -p '{self.data['SiteName']}' up -d"
+            if ProcessUtilities.decideDistro() == ProcessUtilities.cent8 or ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+                dockerCommand = 'docker compose'
+            else:
+                dockerCommand = 'docker-compose'
+
+            command = f"{dockerCommand} -f {self.data['ComposePath']} -p '{self.data['SiteName']}' up -d"
             result, message = ProcessUtilities.outputExecutioner(command, None, None, None, 1)
 
             if os.path.exists(ProcessUtilities.debugPath):
@@ -329,6 +375,25 @@ services:
             logging.statusWriter(self.JobID, 'Bringing containers online..,50')
 
             time.sleep(25)
+
+            ### checking if everything ran properly
+
+            passdata = {}
+            passdata["JobID"] = None
+            passdata['name'] = self.data['ServiceName']
+            da = Docker_Sites(None, passdata)
+            retdata, containers = da.ListContainers()
+
+            containers = json.loads(containers)
+
+            if os.path.exists(ProcessUtilities.debugPath):
+                logging.writeToFile(str(containers))
+
+            ### it means less then two containers which means something went wrong
+            if len(containers) < 2:
+                logging.writeToFile(f'Unkonwn error, containers not running. [DeployWPContainer]')
+                logging.statusWriter(self.JobID, f'Unkonwn error, containers not running. [DeployWPContainer]')
+                return 0
 
             ### Set up Proxy
 
@@ -572,6 +637,10 @@ services:
                 command = f'docker rm {container.short_id}'
                 ProcessUtilities.executioner(command)
 
+
+            command = f"rm -rf /home/{self.data['domain']}/public_html/.htaccess'"
+            ProcessUtilities.executioner(command)
+
             from plogical.installUtilities import installUtilities
             installUtilities.reStartLiteSpeed()
 
@@ -718,9 +787,16 @@ services:
 
             command = 'docker --help'
             result = ProcessUtilities.outputExecutioner(command)
-            print(f'return code of docker install {result}')
+
+            if os.path.exists(ProcessUtilities.debugPath):
+                logging.writeToFile(f'return code of docker install {result}')
+
             if result.find("not found") > -1:
-                DockerInstall.submitInstallDocker()
+                if os.path.exists(ProcessUtilities.debugPath):
+                    logging.writeToFile(f'About to run docker install function...')
+
+                execPath = "/usr/local/CyberCP/bin/python /usr/local/CyberCP/dockerManager/dockerInstall.py"
+                ProcessUtilities.executioner(execPath)
 
             logging.statusWriter(self.JobID, 'Docker is ready to use..,10')
 
@@ -799,8 +875,14 @@ services:
 
             ####
 
-            command = f"docker-compose -f {self.data['ComposePath']} -p '{self.data['SiteName']}' up -d"
+            if ProcessUtilities.decideDistro() == ProcessUtilities.cent8 or ProcessUtilities.decideDistro() == ProcessUtilities.centos:
+                dockerCommand = 'docker compose'
+            else:
+                dockerCommand = 'docker-compose'
+
+            command = f"{dockerCommand} -f {self.data['ComposePath']} -p '{self.data['SiteName']}' up -d"
             result, message = ProcessUtilities.outputExecutioner(command, None, None, None, 1)
+
 
             if result == 0:
                 logging.statusWriter(self.JobID, f'Error {str(message)} . [404]')
@@ -809,6 +891,26 @@ services:
             logging.statusWriter(self.JobID, 'Bringing containers online..,50')
 
             time.sleep(25)
+
+
+            ### checking if everything ran properly
+
+            passdata = {}
+            passdata["JobID"] = None
+            passdata['name'] = self.data['ServiceName']
+            da = Docker_Sites(None, passdata)
+            retdata, containers = da.ListContainers()
+
+            containers = json.loads(containers)
+
+            if os.path.exists(ProcessUtilities.debugPath):
+                logging.writeToFile(str(containers))
+
+            ### it means less then two containers which means something went wrong
+            if len(containers) < 2:
+                logging.writeToFile(f'Unkonwn error, containers not running. [DeployN8NContainer]')
+                logging.statusWriter(self.JobID, f'Unkonwn error, containers not running. [DeployN8NContainer]')
+                return 0
 
             ### Set up Proxy
 

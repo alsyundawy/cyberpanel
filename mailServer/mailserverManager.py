@@ -560,7 +560,8 @@ class MailServerManager(multi.Thread):
 
             if os.path.exists(postfixMapPath):
 
-                postfixMapData = open(postfixMapPath, 'r').read()
+                postfixMapData = open(postfixMapPath, 'r', encoding='utf-8').read()
+
 
                 if postfixMapData.find(selectedDomain) == -1:
                     mailConfigured = 0
@@ -586,7 +587,7 @@ class MailServerManager(multi.Thread):
                     json_data = json_data + ',' + json.dumps(dic)
 
             json_data = json_data + ']'
-            final_json = json.dumps({'status': 1, 'fetchStatus': 1,'serverHostname': 'mail.%s' % (selectedDomain), 'mailConfigured': mailConfigured, 'error_message': "None", "data": json_data})
+            final_json = json.dumps({'status': 1, 'fetchStatus': 1,'serverHostname': selectedDomain, 'mailConfigured': mailConfigured, 'error_message': "None", "data": json_data})
             return HttpResponse(final_json)
 
         except BaseException as msg:

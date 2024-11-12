@@ -679,7 +679,7 @@ if [[ -f /usr/local/CyberCP/bin/python2 ]]; then
 elif [[ -d /usr/local/CyberCP/bin/ ]]; then
   echo -e "\nNo need to re-setup virtualenv at /usr/local/CyberCP...\n"
 else
-  virtualenv -p /usr/bin/python3 --system-site-packages /usr/local/CyberCP
+  virtualenv -p /usr/bin/python3 /usr/local/CyberCP
     Check_Return
 fi
 
@@ -697,7 +697,7 @@ else
   # shellcheck disable=SC1091
   source /usr/local/CyberCP/bin/activate
     Check_Return
-  $PIP3 install --default-timeout=3600 --ignore-installed -r /usr/local/requirments.txt
+  /usr/local/CyberCP/bin/pip3 install --default-timeout=3600 --ignore-installed -r /usr/local/requirments.txt
     Check_Return
 fi
 
@@ -846,6 +846,22 @@ systemctl restart lscpd
 }
 
 Post_Install_Display_Final_Info() {
+
+#### this is temp code for csf
+
+#rm -Rfv /usr/local/CyberCP/configservercsf
+#rm -fv /home/cyberpanel/plugins/configservercsf
+#rm -Rfv /usr/local/CyberCP/public/static/configservercsf
+#
+#sed -i "/configservercsf/d" /usr/local/CyberCP/CyberCP/settings.py
+#sed -i "/configservercsf/d" /usr/local/CyberCP/CyberCP/urls.py
+#if [ ! -e /etc/cxs/cxs.pl ]; then
+#    sed -i "/configserver/d" /usr/local/CyberCP/baseTemplate/templates/baseTemplate/index.html
+#fi
+#systemctl restart lscpd
+### this is temp code for csf
+
+
 Panel_Port=$(cat /usr/local/lscp/conf/bind.conf)
 if [[ $Panel_Port = "" ]] ; then
   Panel_Port="8090"

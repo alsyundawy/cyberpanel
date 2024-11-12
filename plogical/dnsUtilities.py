@@ -254,7 +254,7 @@ class DNS:
 
                     ## MX Record.
 
-                    mxValue = "mail." + topLevelDomain
+                    mxValue = topLevelDomain
 
                     # record = Records(domainOwner=zone,
                     #                  domain_id=zone.id,
@@ -399,7 +399,7 @@ class DNS:
 
                     ## MX Record.
 
-                    mxValue = "mail." + topLevelDomain
+                    mxValue = topLevelDomain
 
                     # record = Records(domainOwner=zone,
                     #                  domain_id=zone.id,
@@ -491,7 +491,7 @@ class DNS:
 
                 ## MX Records
 
-                mxValue = "mail." + actualSubDomain
+                mxValue = actualSubDomain
 
                 # record = Records(domainOwner=zone,
                 #                  domain_id=zone.id,
@@ -561,15 +561,6 @@ class DNS:
     @staticmethod
     def createDKIMRecords(domain):
         try:
-
-            command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.6/site-packages/tldextract/.suffix_cache'
-            ProcessUtilities.executioner(command)
-
-            command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python3.8/site-packages/tldextract/.suffix_cache'
-            ProcessUtilities.executioner(command)
-
-            command = 'chown cyberpanel:cyberpanel -R /usr/local/CyberCP/lib/python*/site-packages/tldextract/.suffix_cache'
-            ProcessUtilities.executioner(command, None, True)
 
             import tldextract
 
@@ -689,11 +680,16 @@ class DNS:
                 return
 
             if zone.type == 'MASTER':
-                getSOA = Records.objects.get(domainOwner=zone, type='SOA')
-                soaContent = getSOA.content.split(' ')
-                soaContent[2] = str(int(soaContent[2]) + 1)
-                getSOA.content = " ".join(soaContent)
-                getSOA.save()
+                try:
+                    for getSOA in Records.objects.filter(domainOwner=zone, type='SOA'):
+                    #getSOA = Records.objects.get(domainOwner=zone, type='SOA')
+                        soaContent = getSOA.content.split(' ')
+                        soaContent[2] = str(int(soaContent[2]) + 1)
+                        getSOA.content = " ".join(soaContent)
+                        getSOA.save()
+                except:
+                    pass
+
 
             if type == 'NS':
                 if Records.objects.filter(name=name, type=type, content=value).count() == 0:
