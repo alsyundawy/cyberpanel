@@ -548,6 +548,7 @@ fi
 
 # shellcheck disable=SC1091
 . /usr/local/CyberPanel/bin/activate
+pip install --upgrade setuptools packaging
 
 Download_Requirement
 
@@ -691,6 +692,7 @@ if [ "$Server_OS" = "Ubuntu" ]; then
   # shellcheck disable=SC1091
   . /usr/local/CyberCP/bin/activate
     Check_Return
+  pip install --upgrade setuptools packaging
   pip3 install --default-timeout=3600 --ignore-installed -r /usr/local/requirments.txt
     Check_Return
 else
@@ -833,7 +835,7 @@ chown -R cyberpanel:cyberpanel /usr/local/CyberCP/lib64
 
 
 
-if [[ "$Server_OS_Version" = "9" ]] || [[ "$Server_OS_Version" = "8" ]] || [[ "$Server_OS_Version" = "20" ]]; then
+if [[ "$Server_OS_Version" = "9" ]] || [[ "$Server_OS_Version" = "18" ]] || [[ "$Server_OS_Version" = "8" ]] || [[ "$Server_OS_Version" = "20" ]]; then
     echo "PYTHONHOME=/usr" > /usr/local/lscp/conf/pythonenv.conf
   else
     # Uncomment and use the following lines if necessary for other OS versions

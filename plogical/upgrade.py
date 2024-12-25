@@ -18,7 +18,7 @@ import random
 import string
 
 VERSION = '2.3'
-BUILD = 8
+BUILD = 9
 
 CENTOS7 = 0
 CENTOS8 = 1
@@ -1188,7 +1188,7 @@ CREATE TABLE `websiteFunctions_backupsv2` (`id` integer AUTO_INCREMENT NOT NULL 
             except:
                 pass
 
-            query = "CREATE TABLE `IncBackups_oneclickbackups` (`id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY, `planName` varchar(100) NOT NULL, `months` varchar(100) NOT NULL, `price` varchar(100) NOT NULL, `customer` varchar(300) NOT NULL, `subscription` varchar(300) NOT NULL UNIQUE, `sftpUser` varchar(100) NOT NULL, `config` longtext NOT NULL, `date` datetime(6) NOT NULL, `state` integer NOT NULL, `owner_id` integer NOT NULL);"
+            query = "CREATE TABLE `IncBackups_oneclickbackups` (`id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY, `planName` varchar(100) NOT NULL, `months` varchar(100) NOT NULL, `price` varchar(100) NOT NULL, `customer` varchar(255) NOT NULL, `subscription` varchar(255) NOT NULL UNIQUE, `sftpUser` varchar(100) NOT NULL, `config` longtext NOT NULL, `date` datetime(6) NOT NULL, `state` integer NOT NULL, `owner_id` integer NOT NULL);"
             try:
                 cursor.execute(query)
             except:
@@ -3556,12 +3556,60 @@ pm.max_spare_servers = 3
         #Upgrade.executioner(command, 'fix csf if there', 0)
 
         if os.path.exists('/etc/csf'):
+            ##### Function to backup custom csf files and restore
+
+            from datetime import datetime
+
+            # List of files to backup
+            FILES = [
+                "/etc/csf/csf.allow",
+                "/etc/csf/csf.deny",
+                "/etc/csf/csf.conf",
+                "/etc/csf/csf.ignore",
+                "/etc/csf/csf.rignore",
+                "/etc/csf/csf.blocklists",
+                "/etc/csf/csf.dyndns"
+            ]
+
+            # Directory for backups
+            BACKUP_DIR = f"/home/cyberpanel/csf_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+            # Backup function
+            def backup_files():
+                os.makedirs(BACKUP_DIR, exist_ok=True)
+                for file in FILES:
+                    if os.path.exists(file):
+                        shutil.copy(file, BACKUP_DIR)
+                        print(f"Backed up: {file}")
+                    else:
+                        print(f"File not found, skipping: {file}")
+
+            # Restore function
+            def restore_files():
+                for file in FILES:
+                    backup_file = os.path.join(BACKUP_DIR, os.path.basename(file))
+                    if os.path.exists(backup_file):
+                        shutil.copy(backup_file, file)
+                        print(f"Restored: {file}")
+                    else:
+                        print(f"Backup not found for: {file}")
+
+            # Backup the files
+            print("Backing up files...")
+            backup_files()
+
             execPath = "sudo /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/csf.py"
             execPath = execPath + " removeCSF"
             Upgrade.executioner(execPath, 'fix csf if there', 0)
 
             execPath = "sudo /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/csf.py"
             execPath = execPath + " installCSF"
+
+            # Restore the files
+            print("Restoring files...")
+            restore_files()
+
+
             Upgrade.executioner(execPath, 'fix csf if there', 0)
 
 
