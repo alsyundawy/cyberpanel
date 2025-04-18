@@ -892,7 +892,11 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
                 cursor.execute("UPDATE loginSystem_acl SET config = '%s' where name = 'admin'" % (Upgrade.AdminACL))
             except BaseException as msg:
                 print(str(msg))
-                import sleep
+                try:
+                    import sleep
+                except:
+                    from time import sleep
+                from time import sleep
                 sleep(10)
 
             try:
@@ -3471,6 +3475,10 @@ pm.max_spare_servers = 3
 
         ##
 
+        # execPath = "sudo /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/csf.py"
+        # execPath = execPath + " removeCSF"
+        # Upgrade.executioner(execPath, 'fix csf if there', 0)
+
         Upgrade.downloadAndUpgrade(versionNumbring, branch)
         versionNumbring = Upgrade.downloadLink()
         Upgrade.download_install_phpmyadmin()
@@ -3589,8 +3597,11 @@ pm.max_spare_servers = 3
                 for file in FILES:
                     backup_file = os.path.join(BACKUP_DIR, os.path.basename(file))
                     if os.path.exists(backup_file):
-                        shutil.copy(backup_file, file)
-                        print(f"Restored: {file}")
+                        try:
+                            shutil.copy(backup_file, file)
+                            print(f"Restored: {file}")
+                        except:
+                            pass
                     else:
                         print(f"Backup not found for: {file}")
 

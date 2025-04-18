@@ -838,6 +838,7 @@ services:
       - N8N_HOST={self.data['finalURL']}
       - NODE_ENV=production
       - WEBHOOK_URL=https://{self.data['finalURL']}
+      - N8N_PUSH_BACKEND=sse  # Use Server-Sent Events instead of WebSockets
     ports:
       - "{self.data['port']}:5678"
     links:
@@ -908,8 +909,8 @@ services:
 
             ### it means less then two containers which means something went wrong
             if len(containers) < 2:
-                logging.writeToFile(f'Unkonwn error, containers not running. [DeployN8NContainer]')
-                logging.statusWriter(self.JobID, f'Unkonwn error, containers not running. [DeployN8NContainer]')
+                logging.writeToFile(f'Unkonwn error, containers not running. [DeployN8NContainer] . [404]')
+                logging.statusWriter(self.JobID, f'Unkonwn error, containers not running. [DeployN8NContainer] . [404]')
                 return 0
 
             ### Set up Proxy

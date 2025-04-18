@@ -16,6 +16,23 @@ Sudo_Test=$(set)
 
 Set_Default_Variables() {
 
+
+#### this is temp code for csf
+
+rm -Rfv /usr/local/CyberCP/configservercsf
+rm -fv /home/cyberpanel/plugins/configservercsf
+rm -Rfv /usr/local/CyberCP/public/static/configservercsf
+
+sed -i "/configservercsf/d" /usr/local/CyberCP/CyberCP/settings.py
+sed -i "/configservercsf/d" /usr/local/CyberCP/CyberCP/urls.py
+if [ ! -e /etc/cxs/cxs.pl ]; then
+    sed -i "/configserver/d" /usr/local/CyberCP/baseTemplate/templates/baseTemplate/index.html
+fi
+#systemctl restart lscpd
+### this is temp code for csf
+
+
+
 export LC_CTYPE=en_US.UTF-8
 echo -e "\nFetching latest data from CyberPanel server...\n"
 echo -e "This may take few seconds..."
@@ -117,7 +134,7 @@ if grep -q -E "CentOS Linux 7|CentOS Linux 8|CentOS Stream" /etc/os-release ; th
   Server_OS="CentOS"
 elif grep -q "Red Hat Enterprise Linux" /etc/os-release ; then
   Server_OS="RedHat"
-elif grep -q -E "CloudLinux 7|CloudLinux 8" /etc/os-release ; then
+elif grep -q -E "CloudLinux 7|CloudLinux 8|CloudLinux 9" /etc/os-release ; then
   Server_OS="CloudLinux"
 elif grep -q -E "Rocky Linux" /etc/os-release ; then
   Server_OS="RockyLinux"
@@ -129,8 +146,8 @@ elif grep -q -E "openEuler 20.03|openEuler 22.03" /etc/os-release ; then
   Server_OS="openEuler"
 else
   echo -e "Unable to detect your system..."
-  echo -e "\nCyberPanel is supported on x86_64 based Ubuntu 18.04, Ubuntu 20.04, Ubuntu 20.10, Ubuntu 22.04, CentOS 7, CentOS 8, AlmaLinux 8, RockyLinux 8, CloudLinux 7, CloudLinux 8, openEuler 20.03, openEuler 22.03...\n"
-  Debug_Log2 "CyberPanel is supported on x86_64 based Ubuntu 18.04, Ubuntu 20.04, Ubuntu 20.10, Ubuntu 22.04, CentOS 7, CentOS 8, AlmaLinux 8, RockyLinux 8, CloudLinux 7, CloudLinux 8, openEuler 20.03, openEuler 22.03... [404]"
+  echo -e "\nCyberPanel is supported on x86_64 based Ubuntu 18.04, Ubuntu 20.04, Ubuntu 20.10, Ubuntu 22.04, CentOS 7, CentOS 8, AlmaLinux 8, RockyLinux 8, CloudLinux 7, CloudLinux 8, CloudLinux 9, openEuler 20.03, openEuler 22.03...\n"
+  Debug_Log2 "CyberPanel is supported on x86_64 based Ubuntu 18.04, Ubuntu 20.04, Ubuntu 20.10, Ubuntu 22.04, CentOS 7, CentOS 8, AlmaLinux 8, RockyLinux 8, CloudLinux 7, CloudLinux 8, CloudLinux 9, openEuler 20.03, openEuler 22.03... [404]"
   exit
 fi
 
@@ -541,9 +558,54 @@ if [[ -f /usr/local/CyberPanel/bin/python2 ]]; then
 elif [[ -d /usr/local/CyberPanel/bin/ ]]; then
   echo -e "\nNo need to re-setup virtualenv at /usr/local/CyberPanel...\n"
 else
-  echo -e "\nNothing found, need fresh setup...\n"
-  virtualenv -p /usr/bin/python3 --system-site-packages /usr/local/CyberPanel
-  Check_Return
+  #!/bin/bash
+
+echo -e "\nNothing found, need fresh setup...\n"
+
+# Attempt to create a virtual environment
+virtualenv -p /usr/bin/python3 --system-site-packages /usr/local/CyberPanel
+
+# Check if the virtualenv command failed
+if [ $? -ne 0 ]; then
+    echo "virtualenv command failed."
+
+    # Check if the operating system is AlmaLinux
+    if grep -q "AlmaLinux" /etc/os-release; then
+        echo "Operating system is AlmaLinux."
+
+        # Check if the 'packaging' module is installed via RPM
+        if rpm -q python3-packaging >/dev/null 2>&1; then
+            echo "'packaging' module installed via RPM. Proceeding with uninstallation."
+
+            # Uninstall the 'packaging' module using RPM
+            sudo dnf remove python3-packaging -y
+
+            # Check if uninstallation was successful
+            if [ $? -eq 0 ]; then
+                echo "Successfully uninstalled 'packaging' module."
+
+                # Install and upgrade 'packaging' using pip
+                pip install --upgrade packaging
+
+                # Verify the installation
+                if [ $? -eq 0 ]; then
+                    echo "'packaging' module reinstalled and upgraded successfully."
+                    virtualenv -p /usr/bin/python3 --system-site-packages /usr/local/CyberPanel
+                else
+                    echo "Failed to install 'packaging' module using pip."
+                fi
+            else
+                echo "Failed to uninstall 'packaging' module using RPM."
+            fi
+        else
+            echo "'packaging' module is not installed via RPM. No action taken."
+        fi
+    else
+        echo "Operating system is not AlmaLinux. No action taken."
+    fi
+else
+    echo "virtualenv command executed successfully."
+fi
 fi
 
 # shellcheck disable=SC1091
@@ -848,21 +910,6 @@ systemctl restart lscpd
 }
 
 Post_Install_Display_Final_Info() {
-
-#### this is temp code for csf
-
-#rm -Rfv /usr/local/CyberCP/configservercsf
-#rm -fv /home/cyberpanel/plugins/configservercsf
-#rm -Rfv /usr/local/CyberCP/public/static/configservercsf
-#
-#sed -i "/configservercsf/d" /usr/local/CyberCP/CyberCP/settings.py
-#sed -i "/configservercsf/d" /usr/local/CyberCP/CyberCP/urls.py
-#if [ ! -e /etc/cxs/cxs.pl ]; then
-#    sed -i "/configserver/d" /usr/local/CyberCP/baseTemplate/templates/baseTemplate/index.html
-#fi
-#systemctl restart lscpd
-### this is temp code for csf
-
 
 Panel_Port=$(cat /usr/local/lscp/conf/bind.conf)
 if [[ $Panel_Port = "" ]] ; then
