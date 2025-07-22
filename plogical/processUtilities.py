@@ -169,27 +169,31 @@ class ProcessUtilities(multi.Thread):
         distroPath = '/etc/lsb-release'
         distroPathAlma = '/etc/redhat-release'
 
-        if os.path.exists(distroPath):
-            
-            ## this is check only
-            if open(distroPath, 'r').read().find('22.04') > -1:
-                ProcessUtilities.ubuntu22Check = 1
+        # First check if we're on Ubuntu
+        if os.path.exists('/etc/os-release'):
+            with open('/etc/os-release', 'r') as f:
+                content = f.read()
+                if 'Ubuntu' in content:
+                    if '22.04' in content:
+                        ProcessUtilities.ubuntu22Check = 1
+                        return ProcessUtilities.ubuntu20
+                    elif '20.04' in content:
+                        return ProcessUtilities.ubuntu20
+                    return ProcessUtilities.ubuntu
 
-            if open(distroPath, 'r').read().find('20.04') > -1 or open(distroPath, 'r').read().find('22.04'):
-                return ProcessUtilities.ubuntu20
-            return ProcessUtilities.ubuntu
-        else:
-            if open('/etc/redhat-release', 'r').read().find('CentOS Linux release 8') > -1 or open('/etc/redhat-release', 'r').read().find('AlmaLinux release 8') > -1 \
-                    or open('/etc/redhat-release', 'r').read().find('Rocky Linux release 8') > -1 \
-                    or open('/etc/redhat-release', 'r').read().find('Rocky Linux release 9') > -1 or open('/etc/redhat-release', 'r').read().find('AlmaLinux release 9') > -1 or \
-                    open('/etc/redhat-release', 'r').read().find('CloudLinux release 9') > -1 or open('/etc/redhat-release', 'r').read().find('CloudLinux release 8') > -1:
-                ## this is check only
-                if open(distroPathAlma, 'r').read().find('AlmaLinux release 9') > -1 or open(distroPathAlma, 'r').read().find('Rocky Linux release 9') > -1:
-                    ProcessUtilities.alma9check = 1
+        # Check for RedHat-based distributions
+        if os.path.exists(distroPathAlma):
+            with open(distroPathAlma, 'r') as f:
+                content = f.read()
+                if any(x in content for x in ['CentOS Linux release 8', 'AlmaLinux release 8', 'Rocky Linux release 8', 
+                                            'Rocky Linux release 9', 'AlmaLinux release 9', 'CloudLinux release 9', 
+                                            'CloudLinux release 8']):
+                    if any(x in content for x in ['AlmaLinux release 9', 'Rocky Linux release 9']):
+                        ProcessUtilities.alma9check = 1
+                    return ProcessUtilities.cent8
 
-                return ProcessUtilities.cent8
-            return ProcessUtilities.centos
-
+        # Default to Ubuntu if no other distribution is detected
+        return ProcessUtilities.ubuntu
 
     @staticmethod
     def containerCheck():
@@ -267,16 +271,21 @@ class ProcessUtilities(multi.Thread):
 
                 sock.sendall(command.encode('utf-8'))
 
-            data = ""
+            # Collect all raw bytes first, then decode as a complete unit
+            raw_data = b""
 
             while (1):
                 currentData = sock.recv(32)
                 if len(currentData) == 0 or currentData == None:
                     break
-                try:
-                    data = data + currentData.decode(errors = 'ignore')
-                except BaseException as msg:
-                    logging.writeToFile('Some data could not be decoded to str, error message: %s' % str(msg))
+                raw_data += currentData
+
+            # Decode all data at once to prevent UTF-8 character boundary issues
+            try:
+                data = raw_data.decode('utf-8', errors='replace')
+            except BaseException as msg:
+                logging.writeToFile('Some data could not be decoded to str, error message: %s' % str(msg))
+                data = ""
 
             sock.close()
             #logging.writeToFile('Final data: %s.' % (str(data)))
@@ -320,15 +329,21 @@ class ProcessUtilities(multi.Thread):
                 if user!=None:
                     if not command.startswith('sudo'):
                         command = f'sudo -u {user} {command}'
+                # Ensure UTF-8 environment for proper character handling
+                env = os.environ.copy()
+                env['LC_ALL'] = 'C.UTF-8'
+                env['LANG'] = 'C.UTF-8'
+                env['PYTHONIOENCODING'] = 'utf-8'
+                
                 if shell == None or shell == True:
-                    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, encoding='utf-8', errors='replace')
                 else:
-                    p = subprocess.Popen(shlex.split(command),  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    p = subprocess.Popen(shlex.split(command),  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, encoding='utf-8', errors='replace')
 
                 if retRequired:
-                    return 1, p.communicate()[0].decode("utf-8")
+                    return 1, p.communicate()[0]
                 else:
-                    return p.communicate()[0].decode("utf-8")
+                    return p.communicate()[0]
 
             if type(command) == list:
                 command = " ".join(command)
@@ -424,6 +439,4 @@ class ProcessUtilities(multi.Thread):
             print("An error occurred:", e)
             logging.writeToFile(f"[fetch_latest_prestashop_version] An error occurred: {str(e)}")
         return None
-
-
-
+    

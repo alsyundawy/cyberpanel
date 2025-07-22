@@ -17,6 +17,34 @@ class sslUtilities:
 
     Server_root = "/usr/local/lsws"
     redisConf = '/usr/local/lsws/conf/dvhost_redis.conf'
+    
+    @staticmethod
+    def checkDNSRecords(domain):
+        """Check if domain has valid DNS records using external DNS query"""
+        try:
+            # Use dig command to check DNS records from authoritative servers
+            command = f"dig +short {domain} A @8.8.8.8"
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            
+            # If there's any output, the domain has A records
+            if result.stdout.strip():
+                return True
+            
+            # Also check AAAA records
+            command = f"dig +short {domain} AAAA @8.8.8.8"
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            
+            if result.stdout.strip():
+                return True
+                
+            return False
+        except:
+            # Fallback to socket method if dig fails
+            try:
+                socket.gethostbyname(domain)
+                return True
+            except:
+                return False
 
     DONT_ISSUE = 0
     ISSUE_SELFSIGNED = 1
@@ -173,57 +201,133 @@ class sslUtilities:
 
     @staticmethod
     def PatchVhostConf(virtualHostName):
+        """Patch the virtual host configuration to add ACME challenge support
+        
+        This function adds the necessary configuration to handle ACME challenges
+        for both OpenLiteSpeed (OLS) and Apache configurations. It also checks
+        for potential configuration conflicts before making changes.
+        
+        Args:
+            virtualHostName (str): The domain name to configure
+            
+        Returns:
+            tuple: (status, message) where status is 1 for success, 0 for failure
+        """
         try:
-            confPath = sslUtilities.Server_root + "/conf/vhosts/" + virtualHostName
-            completePathToConfigFile = confPath + "/vhost.conf"
-
-            DataVhost = open(completePathToConfigFile, 'r').read()
-
-            if DataVhost.find('/.well-known/acme-challenge') == -1:
-                if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
-                    WriteToFile = open(completePathToConfigFile, 'a')
-
-                    content = '''
-                    
+            # Construct paths
+            confPath = os.path.join(sslUtilities.Server_root, "conf", "vhosts", virtualHostName)
+            completePathToConfigFile = os.path.join(confPath, "vhost.conf")
+            
+            # Check if file exists
+            if not os.path.exists(completePathToConfigFile):
+                logging.CyberCPLogFileWriter.writeToFile(f'Configuration file not found: {completePathToConfigFile}')
+                return 0, f'Configuration file not found: {completePathToConfigFile}'
+            
+            # Read current configuration
+            try:
+                with open(completePathToConfigFile, 'r') as f:
+                    DataVhost = f.read()
+            except IOError as e:
+                logging.CyberCPLogFileWriter.writeToFile(f'Error reading configuration file: {str(e)}')
+                return 0, f'Error reading configuration file: {str(e)}'
+            
+            # Check for potential conflicts
+            conflicts = []
+            
+            # Check if ACME challenge is already configured
+            if DataVhost.find('/.well-known/acme-challenge') != -1:
+                logging.CyberCPLogFileWriter.writeToFile(f'ACME challenge already configured for {virtualHostName}')
+                return 1, 'ACME challenge already configured'
+            
+            # Check for conflicting rewrite rules
+            if DataVhost.find('rewrite') != -1 and DataVhost.find('enable 1') != -1:
+                conflicts.append('Active rewrite rules found that might interfere with ACME challenges')
+            
+            # Check for conflicting location blocks
+            if DataVhost.find('location /.well-known') != -1:
+                conflicts.append('Existing location block for /.well-known found')
+            
+            # Check for conflicting aliases
+            if DataVhost.find('Alias /.well-known') != -1:
+                conflicts.append('Existing alias for /.well-known found')
+            
+            # Check for conflicting context blocks
+            if DataVhost.find('context /.well-known') != -1:
+                conflicts.append('Existing context block for /.well-known found')
+            
+            # Check for conflicting access controls
+            if DataVhost.find('deny from all') != -1 and DataVhost.find('location') != -1:
+                conflicts.append('Global deny rules found that might block ACME challenges')
+            
+            # If conflicts found, log them and return
+            if conflicts:
+                conflict_message = 'Configuration conflicts found: ' + '; '.join(conflicts)
+                logging.CyberCPLogFileWriter.writeToFile(f'Configuration conflicts for {virtualHostName}: {conflict_message}')
+                return 0, conflict_message
+            
+            # Create challenge directory if it doesn't exist
+            challenge_dir = '/usr/local/lsws/Example/html/.well-known/acme-challenge'
+            try:
+                os.makedirs(challenge_dir, exist_ok=True)
+                # Set proper permissions
+                os.chmod(challenge_dir, 0o755)
+            except OSError as e:
+                logging.CyberCPLogFileWriter.writeToFile(f'Error creating challenge directory: {str(e)}')
+                return 0, f'Error creating challenge directory: {str(e)}'
+            
+            # Handle configuration based on server type
+            if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+                # OpenLiteSpeed configuration
+                try:
+                    with open(completePathToConfigFile, 'a') as f:
+                        content = '''
 context /.well-known/acme-challenge {
   location                /usr/local/lsws/Example/html/.well-known/acme-challenge
   allowBrowse             1
-
   rewrite  {
      enable                  0
   }
   addDefaultCharset       off
   phpIniOverride  {
-
   }
 }
 '''
-                    WriteToFile.write(content)
-                    WriteToFile.close()
-                else:
-                    data = open(completePathToConfigFile, 'r').readlines()
-                    WriteToFile = open(completePathToConfigFile, 'w')
-                    Check = 0
-                    for items in data:
-                        if items.find('DocumentRoot /home/')> -1:
-                            if Check == 0:
-                                WriteToFile.write(items)
-                                WriteToFile.write('    Alias /.well-known/acme-challenge /usr/local/lsws/Example/html/.well-known/acme-challenge\n')
-                                Check = 1
-                            else:
-                                WriteToFile.write(items)
-                        else:
-                            WriteToFile.write(items)
-
-                    WriteToFile.close()
-
+                        f.write(content)
+                except IOError as e:
+                    logging.CyberCPLogFileWriter.writeToFile(f'Error writing OLS configuration: {str(e)}')
+                    return 0, f'Error writing OLS configuration: {str(e)}'
+            else:
+                # Apache configuration
+                try:
+                    # Read current configuration
+                    with open(completePathToConfigFile, 'r') as f:
+                        lines = f.readlines()
+                    
+                    # Write new configuration
+                    with open(completePathToConfigFile, 'w') as f:
+                        check = 0
+                        for line in lines:
+                            f.write(line)
+                            if line.find('DocumentRoot /home/') > -1 and check == 0:
+                                f.write('    Alias /.well-known/acme-challenge /usr/local/lsws/Example/html/.well-known/acme-challenge\n')
+                                check = 1
+                except IOError as e:
+                    logging.CyberCPLogFileWriter.writeToFile(f'Error writing Apache configuration: {str(e)}')
+                    return 0, f'Error writing Apache configuration: {str(e)}'
+            
+            # Restart LiteSpeed
+            try:
                 from plogical import installUtilities
-
                 installUtilities.installUtilities.reStartLiteSpeed()
-
-
-        except BaseException as msg:
-            return 0, str(msg)
+                logging.CyberCPLogFileWriter.writeToFile(f'Successfully configured ACME challenge for {virtualHostName}')
+                return 1, 'Successfully configured ACME challenge'
+            except Exception as e:
+                logging.CyberCPLogFileWriter.writeToFile(f'Error restarting LiteSpeed: {str(e)}')
+                return 0, f'Error restarting LiteSpeed: {str(e)}'
+                
+        except Exception as e:
+            logging.CyberCPLogFileWriter.writeToFile(f'Unexpected error in PatchVhostConf: {str(e)}')
+            return 0, f'Unexpected error: {str(e)}'
 
     @staticmethod
     def installSSLForDomain(virtualHostName, adminEmail='example@example.org'):
@@ -475,28 +579,14 @@ context /.well-known/acme-challenge {
                 return 1
 
     @staticmethod
-    def obtainSSLForADomain(virtualHostName, adminEmail, sslpath, aliasDomain=None):
-
+    def obtainSSLForADomain(virtualHostName, adminEmail, sslpath, aliasDomain=None, isHostname=False):
         from plogical.acl import ACLManager
         from plogical.sslv2 import sslUtilities as sslv2
+        from plogical.customACME import CustomACME
         import json
-        #
-        # url = "https://platform.cyberpersons.com/CyberpanelAdOns/Adonpermission"
-        # data = {
-        #     "name": "all",
-        #     "IP": ACLManager.GetServerIP()
-        # }
-        #
-        # import requests
-        # response = requests.post(url, data=json.dumps(data))
-        #Status = response.json()['status']
+        import socket
 
         Status = 1
-
-        # if (Status == 1) or ProcessUtilities.decideServer() == ProcessUtilities.ent:
-        #     retStatus, message = sslv2.obtainSSLForADomain(virtualHostName, adminEmail, sslpath, aliasDomain)
-        #     if retStatus == 1:
-        #         return retStatus
 
         if sslUtilities.CheckIfSSLNeedsToBeIssued(virtualHostName) == sslUtilities.ISSUE_SSL:
             pass
@@ -514,245 +604,198 @@ context /.well-known/acme-challenge {
         command = f'chmod -R 755 /usr/local/lsws/Example/html'
         ProcessUtilities.executioner(command)
 
-        CustomVerificationFile = f'/usr/local/lsws/Example/html/.well-known/acme-challenge/{virtualHostName}'
-        command = f'touch {CustomVerificationFile}'
-        ProcessUtilities.normalExecutioner(command)
-
-
-        URLFetchPathWWW = f'http://www.{virtualHostName}/.well-known/acme-challenge/{virtualHostName}'
-        URLFetchPathNONWWW = f'http://{virtualHostName}/.well-known/acme-challenge/{virtualHostName}'
-
+        # Try Let's Encrypt first
         try:
-            resp = requests.get(URLFetchPathWWW, timeout=5)
-
-            if resp.status_code == 200:
-                logging.CyberCPLogFileWriter.writeToFile(f'Status Code: 200 for: {URLFetchPathWWW}')
-                WWWStatus = 1
-            else:
+            # Start with just the main domain
+            domains = [virtualHostName]
+            
+            # Check if www subdomain has DNS records before adding it (skip for hostnames)
+            if not isHostname and sslUtilities.checkDNSRecords(f'www.{virtualHostName}'):
+                domains.append(f'www.{virtualHostName}')
+                logging.CyberCPLogFileWriter.writeToFile(f"www.{virtualHostName} has DNS records, including in SSL request")
+            elif not isHostname:
+                logging.CyberCPLogFileWriter.writeToFile(f"www.{virtualHostName} has no DNS records, excluding from SSL request")
+            
+            if aliasDomain:
+                domains.append(aliasDomain)
+                # Check if www.aliasDomain has DNS records
+                if sslUtilities.checkDNSRecords(f'www.{aliasDomain}'):
+                    domains.append(f'www.{aliasDomain}')
+                    logging.CyberCPLogFileWriter.writeToFile(f"www.{aliasDomain} has DNS records, including in SSL request")
+                else:
+                    logging.CyberCPLogFileWriter.writeToFile(f"www.{aliasDomain} has no DNS records, excluding from SSL request")
+            
+            # Check if Cloudflare is used
+            use_dns = False
+            try:
+                website = Websites.objects.get(domain=virtualHostName)
+                if website.externalApp == 'cloudflare':
+                    use_dns = True
+            except:
+                pass
+            
+            acme = CustomACME(virtualHostName, adminEmail, staging=False, provider='letsencrypt')
+            if acme.issue_certificate(domains, use_dns=use_dns):
                 logging.CyberCPLogFileWriter.writeToFile(
-                    f'Status Code: {str(resp.status_code)} for: {URLFetchPathWWW}. Error: {resp.text}')
-        except BaseException as msg:
+                    f"Successfully obtained SSL using Let's Encrypt for: {virtualHostName}")
+                return 1
+        except Exception as e:
             logging.CyberCPLogFileWriter.writeToFile(
-                f'Status Code: Unknown for: {URLFetchPathWWW}. Error: {str(msg)}')
+                f"Let's Encrypt failed: {str(e)}. Trying ZeroSSL...")
 
+        # Try ZeroSSL if Let's Encrypt fails
         try:
-            resp = requests.get(URLFetchPathNONWWW, timeout=5)
-            if resp.status_code == 200:
-                logging.CyberCPLogFileWriter.writeToFile(f'Status Code: 200 for: {URLFetchPathNONWWW}')
-                NONWWWStatus = 1
-            else:
-                logging.CyberCPLogFileWriter.writeToFile(f'Status Code: {str(resp.status_code)} for: {URLFetchPathNONWWW}. Error: {resp.text}')
-        except BaseException as msg:
+            # Start with just the main domain
+            domains = [virtualHostName]
+            
+            # Check if www subdomain has DNS records before adding it (skip for hostnames)
+            if not isHostname and sslUtilities.checkDNSRecords(f'www.{virtualHostName}'):
+                domains.append(f'www.{virtualHostName}')
+                logging.CyberCPLogFileWriter.writeToFile(f"www.{virtualHostName} has DNS records, including in SSL request")
+            elif not isHostname:
+                logging.CyberCPLogFileWriter.writeToFile(f"www.{virtualHostName} has no DNS records, excluding from SSL request")
+            
+            if aliasDomain:
+                domains.append(aliasDomain)
+                # Check if www.aliasDomain has DNS records
+                if sslUtilities.checkDNSRecords(f'www.{aliasDomain}'):
+                    domains.append(f'www.{aliasDomain}')
+                    logging.CyberCPLogFileWriter.writeToFile(f"www.{aliasDomain} has DNS records, including in SSL request")
+                else:
+                    logging.CyberCPLogFileWriter.writeToFile(f"www.{aliasDomain} has no DNS records, excluding from SSL request")
+            
+            acme = CustomACME(virtualHostName, adminEmail, staging=False, provider='zerossl')
+            if acme.issue_certificate(domains, use_dns=use_dns):
+                logging.CyberCPLogFileWriter.writeToFile(
+                    f"Successfully obtained SSL using ZeroSSL for: {virtualHostName}")
+                return 1
+        except Exception as e:
             logging.CyberCPLogFileWriter.writeToFile(
-                f'Status Code: Unkown for: {URLFetchPathNONWWW}. Error: {str(msg)}')
+                f"ZeroSSL failed: {str(e)}. Falling back to acme.sh")
 
-        WWWStatus = 1
-        NONWWWStatus = 1
-
-
+        # Fallback to acme.sh if both ACME providers fail
         try:
             acmePath = '/root/.acme.sh/acme.sh'
-
-            ### register account for zero ssl
-
             command = '%s --register-account -m %s' % (acmePath, adminEmail)
             subprocess.call(shlex.split(command))
-
-            # if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
-            #     acmePath = '/home/cyberpanel/.acme.sh/acme.sh'
 
             command = '%s --set-default-ca --server letsencrypt' % (acmePath)
             subprocess.call(shlex.split(command))
 
             if aliasDomain is None:
-
                 existingCertPath = '/etc/letsencrypt/live/' + virtualHostName
                 if not os.path.exists(existingCertPath):
                     command = 'mkdir -p ' + existingCertPath
                     subprocess.call(shlex.split(command))
 
                 try:
-                    command = acmePath + " --issue -d " + virtualHostName + " -d www." + virtualHostName \
+                    # Build domain list for acme.sh
+                    domain_list = " -d " + virtualHostName
+                    
+                    # Check if www subdomain has DNS records (skip for hostnames)
+                    if not isHostname and sslUtilities.checkDNSRecords(f'www.{virtualHostName}'):
+                        domain_list += " -d www." + virtualHostName
+                        logging.CyberCPLogFileWriter.writeToFile(f"www.{virtualHostName} has DNS records, including in acme.sh SSL request")
+                    elif not isHostname:
+                        logging.CyberCPLogFileWriter.writeToFile(f"www.{virtualHostName} has no DNS records, excluding from acme.sh SSL request")
+                    
+                    command = acmePath + " --issue" + domain_list \
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --staging'
-                    #ResultText = open(logging.CyberCPLogFileWriter.fileName, 'r').read()
-                    #CurrentMessage = "Trying to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName
-                    if (WWWStatus and NONWWWStatus):
-
-                        #logging.CyberCPLogFileWriter.writeToFile(CurrentMessage, 0)
-
-                        logging.CyberCPLogFileWriter.writeToFile(command, 0)
-
-                        #output = subprocess.check_output(shlex.split(command)).decode("utf-8")
-
-                        try:
-                            result = subprocess.run(command, capture_output=True, universal_newlines=True,shell=True)
-                        except:
-                            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
-
-
-                        stdout = result.stdout
-                        stderr = result.stderr
-
-
-
-                        if result.returncode == 0:
-
-                            if os.path.exists(ProcessUtilities.debugPath):
-                                logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-
-                            command = acmePath + " --issue -d " + virtualHostName + " -d www." + virtualHostName \
-                                      + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                                      + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --server letsencrypt'
-
-                            logging.CyberCPLogFileWriter.writeToFile(command, 0)
-
-                            try:
-                                result = subprocess.run(command, capture_output=True, universal_newlines=True,
-                                                        shell=True)
-                            except:
-                                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                                        universal_newlines=True, shell=True)
-
-                            stdout = result.stdout
-                            stderr = result.stderr
-
-                            if result.returncode == 0:
-
-                                if os.path.exists(ProcessUtilities.debugPath):
-                                    logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-
-                                logging.CyberCPLogFileWriter.writeToFile(
-                                    "Successfully obtained SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
-                                logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, stdout,
-                                                                       'SSL Notification for %s.' % (virtualHostName))
-                                return 1
-                            else:
-                                logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-                                raise subprocess.CalledProcessError(0, '', '')
-
-                        else:
-                            logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-                            raise subprocess.CalledProcessError(0, '', '')
+                              + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --staging' \
+                              + ' --webroot-path /usr/local/lsws/Example/html'
+                    
+                    if ProcessUtilities.decideServer() == ProcessUtilities.OLS:
+                        result = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
                     else:
-                        logging.CyberCPLogFileWriter.writeToFile(command, 0)
-                        raise subprocess.CalledProcessError(0, '', '')
+                        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
 
-                except subprocess.CalledProcessError:
-                    logging.CyberCPLogFileWriter.writeToFile(
-                        "Failed to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
-
-                    finalText = "Failed to obtain SSL for: " + virtualHostName + " and: www." + virtualHostName
-
-                    try:
-                        command = acmePath + " --issue -d " + virtualHostName + ' --cert-file ' + existingCertPath \
-                                  + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --staging'
-
-
-                        #ResultText = open(logging.CyberCPLogFileWriter.fileName, 'r').read()
-                        CurrentMessage = '%s\nTrying to obtain SSL for: %s' % (finalText, virtualHostName)
-
-                        if NONWWWStatus:
-                            finalText = '%s\nTrying to obtain SSL for: %s' % (finalText, virtualHostName)
-                            logging.CyberCPLogFileWriter.writeToFile("Trying to obtain SSL for: " + virtualHostName, 0)
-                            logging.CyberCPLogFileWriter.writeToFile(command)
-                            #output = subprocess.check_output(shlex.split(command)).decode("utf-8")
-
-                            try:
-                                result = subprocess.run(command, capture_output=True, universal_newlines=True,
-                                                        shell=True)
-                            except:
-                                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                                        universal_newlines=True, shell=True)
-
-                            stdout = result.stdout
-                            stderr = result.stderr
-
-                            if result.returncode == 0:
-
-                                if os.path.exists(ProcessUtilities.debugPath):
-                                    logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-
-                                command = acmePath + " --issue -d " + virtualHostName + ' --cert-file ' + existingCertPath \
-                                          + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
-                                          + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --server letsencrypt'
-
-                                try:
-                                    result = subprocess.run(command, capture_output=True, universal_newlines=True,
-                                                            shell=True)
-                                except:
-                                    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                                            universal_newlines=True, shell=True)
-
-                                stdout = result.stdout
-                                stderr = result.stderr
-
-                                if result.returncode == 0:
-
-                                    if os.path.exists(ProcessUtilities.debugPath):
-                                        logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-
-                                    logging.CyberCPLogFileWriter.writeToFile(
-                                        "Successfully obtained SSL for: " + virtualHostName, 0)
-                                    finalText = '%s\nSuccessfully obtained SSL for: %s.' % (finalText, virtualHostName)
-                                    logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, finalText,
-                                                                           'SSL Notification for %s.' % (virtualHostName))
-                                    return 1
-                                else:
-                                    logging.CyberCPLogFileWriter.writeToFile(command, 0)
-                                    logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-                                    return 0
-                            else:
-                                logging.CyberCPLogFileWriter.writeToFile(stdout + stderr)
-                                return 0
-
-                        else:
-                            logging.CyberCPLogFileWriter.writeToFile(command, 0)
-                            return 0
-
-                    except subprocess.CalledProcessError:
-                        logging.CyberCPLogFileWriter.writeToFile('Failed to obtain SSL, issuing self-signed SSL for: ' + virtualHostName, 0)
-                        logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, 'Failed to obtain SSL, issuing self-signed SSL for: ' + virtualHostName,
-                                                               'SSL Notification for %s.' % (virtualHostName))
-                        return 0
+                    if result.returncode == 0:
+                        command = acmePath + " --issue" + domain_list \
+                                  + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
+                                  + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --server letsencrypt' \
+                                  + ' --webroot-path /usr/local/lsws/Example/html'
+                        
+                        result = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                        
+                        if result.returncode == 0:
+                            logging.CyberCPLogFileWriter.writeToFile(
+                                "Successfully obtained SSL for: " + virtualHostName + " and: www." + virtualHostName, 0)
+                            logging.CyberCPLogFileWriter.SendEmail(sender_email, adminEmail, result.stdout,
+                                                                   'SSL Notification for %s.' % (virtualHostName))
+                            return 1
+                    return 0
+                except Exception as e:
+                    logging.CyberCPLogFileWriter.writeToFile(str(e))
+                    return 0
             else:
-
                 existingCertPath = '/etc/letsencrypt/live/' + virtualHostName
                 if not os.path.exists(existingCertPath):
                     command = 'mkdir -p ' + existingCertPath
                     subprocess.call(shlex.split(command))
 
                 try:
-                    logging.CyberCPLogFileWriter.writeToFile(
-                        "Trying to obtain SSL for: " + virtualHostName + ", www." + virtualHostName + ", " + aliasDomain + " and www." + aliasDomain + ",")
-
-                    command = acmePath + " --issue -d " + virtualHostName + " -d www." + virtualHostName \
-                              + ' -d ' + aliasDomain + ' -d www.' + aliasDomain\
+                    # Build domain list for acme.sh with alias domains
+                    domain_list = " -d " + virtualHostName
+                    
+                    # Check if www subdomain has DNS records
+                    if sslUtilities.checkDNSRecords(f'www.{virtualHostName}'):
+                        domain_list += " -d www." + virtualHostName
+                    
+                    # Add alias domain
+                    domain_list += " -d " + aliasDomain
+                    
+                    # Check if www.aliasDomain has DNS records
+                    if sslUtilities.checkDNSRecords(f'www.{aliasDomain}'):
+                        domain_list += " -d www." + aliasDomain
+                    
+                    command = acmePath + " --issue" + domain_list \
                               + ' --cert-file ' + existingCertPath + '/cert.pem' + ' --key-file ' + existingCertPath + '/privkey.pem' \
                               + ' --fullchain-file ' + existingCertPath + '/fullchain.pem' + ' -w /usr/local/lsws/Example/html -k ec-256 --force --server letsencrypt'
 
-                    output = subprocess.check_output(shlex.split(command)).decode("utf-8")
-                    logging.CyberCPLogFileWriter.writeToFile(
-                        "Successfully obtained SSL for: " + virtualHostName + ", www." + virtualHostName + ", " + aliasDomain + "and www." + aliasDomain + ",")
-
-                except subprocess.CalledProcessError:
-                    logging.CyberCPLogFileWriter.writeToFile(
-                        "Failed to obtain SSL for: " + virtualHostName + ", www." + virtualHostName + ", " + aliasDomain + "and www." + aliasDomain + ",")
+                    result = subprocess.run(command, capture_output=True, universal_newlines=True, shell=True)
+                    
+                    if result.returncode == 0:
+                        return 1
                     return 0
-
-            ##
-
+                except Exception as e:
+                    logging.CyberCPLogFileWriter.writeToFile(str(e))
+                    return 0
+        except Exception as e:
+            logging.CyberCPLogFileWriter.writeToFile(str(e))
             return 0
 
-        except BaseException as msg:
-            logging.CyberCPLogFileWriter.writeToFile(str(msg) + " [Failed to obtain SSL. [obtainSSLForADomain]]")
-            return 0
 
-
-def issueSSLForDomain(domain, adminEmail, sslpath, aliasDomain=None):
+def issueSSLForDomain(domain, adminEmail, sslpath, aliasDomain=None, isHostname=False):
     try:
-        if sslUtilities.obtainSSLForADomain(domain, adminEmail, sslpath, aliasDomain) == 1:
+        # Check if certificate already exists and try to renew it first
+        existingCertPath = '/etc/letsencrypt/live/' + domain + '/fullchain.pem'
+        if os.path.exists(existingCertPath):
+            logging.CyberCPLogFileWriter.writeToFile(f"Certificate exists for {domain}, attempting renewal...")
+            
+            # Try to renew using acme.sh
+            acmePath = '/root/.acme.sh/acme.sh'
+            if os.path.exists(acmePath):
+                # First set the webroot path for the domain
+                command = f'{acmePath} --update-account --accountemail {adminEmail}'
+                subprocess.call(command, shell=True)
+                
+                # Build domain list for renewal
+                renewal_domains = f'-d {domain}'
+                if not isHostname and sslUtilities.checkDNSRecords(f'www.{domain}'):
+                    renewal_domains += f' -d www.{domain}'
+                
+                # Try to renew with explicit webroot
+                command = f'{acmePath} --renew {renewal_domains} --webroot /usr/local/lsws/Example/html --force'
+                result = subprocess.run(command, capture_output=True, text=True, shell=True)
+                
+                if result.returncode == 0:
+                    logging.CyberCPLogFileWriter.writeToFile(f"Successfully renewed SSL for {domain}")
+                    if sslUtilities.installSSLForDomain(domain, adminEmail) == 1:
+                        return [1, "None"]
+                else:
+                    logging.CyberCPLogFileWriter.writeToFile(f"Renewal failed for {domain}, falling back to new issuance")
+        
+        if sslUtilities.obtainSSLForADomain(domain, adminEmail, sslpath, aliasDomain, isHostname) == 1:
             if sslUtilities.installSSLForDomain(domain, adminEmail) == 1:
                 return [1, "None"]
             else:

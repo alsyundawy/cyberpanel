@@ -17,8 +17,8 @@ from CyberCP import settings
 import random
 import string
 
-VERSION = '2.3'
-BUILD = 9
+VERSION = '2.4'
+BUILD = 2
 
 CENTOS7 = 0
 CENTOS8 = 1
@@ -803,6 +803,151 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             try:
                 cursor.execute(
                     'CREATE TABLE `baseTemplate_cyberpanelcosmetic` (`id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY, `MainDashboardCSS` longtext NOT NULL)')
+            except:
+                pass
+
+            # AI Scanner Tables
+            try:
+                cursor.execute('''
+                    CREATE TABLE `ai_scanner_settings` (
+                        `id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY,
+                        `admin_id` integer NOT NULL UNIQUE,
+                        `api_key` varchar(255) DEFAULT NULL,
+                        `balance` decimal(10,4) NOT NULL DEFAULT 0.0000,
+                        `is_payment_configured` bool NOT NULL DEFAULT 0,
+                        `created_at` datetime(6) NOT NULL,
+                        `updated_at` datetime(6) NOT NULL,
+                        KEY `ai_scanner_settings_admin_id_idx` (`admin_id`),
+                        CONSTRAINT `ai_scanner_settings_admin_id_fk` FOREIGN KEY (`admin_id`) 
+                        REFERENCES `loginSystem_administrator` (`id`) ON DELETE CASCADE
+                    )
+                ''')
+            except:
+                pass
+
+            try:
+                cursor.execute('''
+                    CREATE TABLE `ai_scanner_history` (
+                        `id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY,
+                        `admin_id` integer NOT NULL,
+                        `scan_id` varchar(100) NOT NULL UNIQUE,
+                        `domain` varchar(255) NOT NULL,
+                        `scan_type` varchar(20) NOT NULL DEFAULT 'full',
+                        `status` varchar(20) NOT NULL DEFAULT 'pending',
+                        `cost_usd` decimal(10,6) DEFAULT NULL,
+                        `files_scanned` integer NOT NULL DEFAULT 0,
+                        `issues_found` integer NOT NULL DEFAULT 0,
+                        `findings_json` longtext DEFAULT NULL,
+                        `summary_json` longtext DEFAULT NULL,
+                        `error_message` longtext DEFAULT NULL,
+                        `started_at` datetime(6) NOT NULL,
+                        `completed_at` datetime(6) DEFAULT NULL,
+                        KEY `ai_scanner_history_admin_id_idx` (`admin_id`),
+                        KEY `ai_scanner_history_scan_id_idx` (`scan_id`),
+                        KEY `ai_scanner_history_started_at_idx` (`started_at`),
+                        CONSTRAINT `ai_scanner_history_admin_id_fk` FOREIGN KEY (`admin_id`) 
+                        REFERENCES `loginSystem_administrator` (`id`) ON DELETE CASCADE
+                    )
+                ''')
+            except:
+                pass
+
+            try:
+                cursor.execute('''
+                    CREATE TABLE `ai_scanner_file_tokens` (
+                        `id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY,
+                        `token` varchar(100) NOT NULL UNIQUE,
+                        `scan_history_id` integer NOT NULL,
+                        `domain` varchar(255) NOT NULL,
+                        `wp_path` varchar(500) NOT NULL,
+                        `expires_at` datetime(6) NOT NULL,
+                        `created_at` datetime(6) NOT NULL,
+                        `is_active` bool NOT NULL DEFAULT 1,
+                        KEY `ai_scanner_file_tokens_scan_history_id_idx` (`scan_history_id`),
+                        KEY `ai_scanner_file_tokens_token_idx` (`token`),
+                        CONSTRAINT `ai_scanner_file_tokens_scan_history_id_fk` FOREIGN KEY (`scan_history_id`) 
+                        REFERENCES `ai_scanner_history` (`id`) ON DELETE CASCADE
+                    )
+                ''')
+            except:
+                pass
+
+            try:
+                cursor.execute('''
+                    CREATE TABLE `ai_scanner_status_updates` (
+                        `scan_id` varchar(100) NOT NULL PRIMARY KEY,
+                        `phase` varchar(50) NOT NULL,
+                        `progress` integer NOT NULL DEFAULT 0,
+                        `current_file` longtext DEFAULT NULL,
+                        `files_discovered` integer NOT NULL DEFAULT 0,
+                        `files_scanned` integer NOT NULL DEFAULT 0,
+                        `files_remaining` integer NOT NULL DEFAULT 0,
+                        `threats_found` integer NOT NULL DEFAULT 0,
+                        `critical_threats` integer NOT NULL DEFAULT 0,
+                        `high_threats` integer NOT NULL DEFAULT 0,
+                        `activity_description` longtext DEFAULT NULL,
+                        `last_updated` datetime(6) NOT NULL,
+                        `created_at` datetime(6) NOT NULL,
+                        KEY `ai_scanner_status_updates_scan_id_last_updated_idx` (`scan_id`, `last_updated` DESC)
+                    )
+                ''')
+            except:
+                pass
+
+            # AI Scanner Scheduled Scans Tables
+            try:
+                cursor.execute('''
+                    CREATE TABLE `ai_scanner_scheduled_scans` (
+                        `id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY,
+                        `admin_id` integer NOT NULL,
+                        `name` varchar(200) NOT NULL,
+                        `domains` longtext NOT NULL,
+                        `frequency` varchar(20) NOT NULL DEFAULT 'weekly',
+                        `scan_type` varchar(20) NOT NULL DEFAULT 'full',
+                        `time_of_day` time NOT NULL,
+                        `day_of_week` integer DEFAULT NULL,
+                        `day_of_month` integer DEFAULT NULL,
+                        `status` varchar(20) NOT NULL DEFAULT 'active',
+                        `last_run` datetime(6) DEFAULT NULL,
+                        `next_run` datetime(6) DEFAULT NULL,
+                        `created_at` datetime(6) NOT NULL,
+                        `updated_at` datetime(6) NOT NULL,
+                        `email_notifications` bool NOT NULL DEFAULT 1,
+                        `notification_emails` longtext NOT NULL DEFAULT '',
+                        `notify_on_threats` bool NOT NULL DEFAULT 1,
+                        `notify_on_completion` bool NOT NULL DEFAULT 0,
+                        `notify_on_failure` bool NOT NULL DEFAULT 1,
+                        KEY `ai_scanner_scheduled_scans_admin_id_idx` (`admin_id`),
+                        KEY `ai_scanner_scheduled_scans_status_next_run_idx` (`status`, `next_run`),
+                        CONSTRAINT `ai_scanner_scheduled_scans_admin_id_fk` FOREIGN KEY (`admin_id`) 
+                        REFERENCES `loginSystem_administrator` (`id`) ON DELETE CASCADE
+                    )
+                ''')
+            except:
+                pass
+
+            try:
+                cursor.execute('''
+                    CREATE TABLE `ai_scanner_scheduled_executions` (
+                        `id` integer AUTO_INCREMENT NOT NULL PRIMARY KEY,
+                        `scheduled_scan_id` integer NOT NULL,
+                        `execution_time` datetime(6) NOT NULL,
+                        `status` varchar(20) NOT NULL DEFAULT 'pending',
+                        `domains_scanned` longtext NOT NULL DEFAULT '',
+                        `total_scans` integer NOT NULL DEFAULT 0,
+                        `successful_scans` integer NOT NULL DEFAULT 0,
+                        `failed_scans` integer NOT NULL DEFAULT 0,
+                        `total_cost` decimal(10,6) NOT NULL DEFAULT 0.000000,
+                        `scan_ids` longtext NOT NULL DEFAULT '',
+                        `error_message` longtext DEFAULT NULL,
+                        `started_at` datetime(6) DEFAULT NULL,
+                        `completed_at` datetime(6) DEFAULT NULL,
+                        KEY `ai_scanner_scheduled_executions_scheduled_scan_id_idx` (`scheduled_scan_id`),
+                        KEY `ai_scanner_scheduled_executions_execution_time_idx` (`execution_time` DESC),
+                        CONSTRAINT `ai_scanner_scheduled_executions_scheduled_scan_id_fk` FOREIGN KEY (`scheduled_scan_id`) 
+                        REFERENCES `ai_scanner_scheduled_scans` (`id`) ON DELETE CASCADE
+                    )
+                ''')
             except:
                 pass
 
@@ -2207,6 +2352,10 @@ CREATE TABLE `websiteFunctions_backupsv2` (`id` integer AUTO_INCREMENT NOT NULL 
                 if not Upgrade.executioner(command, command, 1):
                     return 0, 'Failed to execute %s' % (command)
 
+                command = 'git clean -f'
+                if not Upgrade.executioner(command, command, 1):
+                    return 0, 'Failed to execute %s' % (command)
+
                 command = 'git pull'
                 if not Upgrade.executioner(command, command, 1):
                     return 0, 'Failed to execute %s' % (command)
@@ -2856,6 +3005,33 @@ echo $oConfig->Save() ? 'Done' : 'Error';
                 writeToFile.write(content)
                 writeToFile.close()
 
+            # Fix mailbox auto-creation issue
+            if dovecotContent.find('lda_mailbox_autocreate') == -1:
+                Upgrade.stdOut("Enabling mailbox auto-creation in dovecot...")
+                
+                # Add mailbox auto-creation settings to protocol lda section
+                dovecotContent = open(dovecotConf, 'r').read()
+                
+                if dovecotContent.find('protocol lda') > -1:
+                    # Update existing protocol lda section
+                    import re
+                    pattern = r'(protocol lda\s*{[^}]*)'
+                    replacement = r'\1\n    lda_mailbox_autocreate = yes\n    lda_mailbox_autosubscribe = yes'
+                    dovecotContent = re.sub(pattern, replacement, dovecotContent)
+                    
+                    writeToFile = open(dovecotConf, 'w')
+                    writeToFile.write(dovecotContent)
+                    writeToFile.close()
+                else:
+                    # Add new protocol lda section
+                    writeToFile = open(dovecotConf, 'a')
+                    content = """\nprotocol lda {
+    lda_mailbox_autocreate = yes
+    lda_mailbox_autosubscribe = yes
+}\n"""
+                    writeToFile.write(content)
+                    writeToFile.close()
+
                 command = 'systemctl restart dovecot'
                 Upgrade.executioner(command, command, 0)
 
@@ -2957,6 +3133,13 @@ vmail
         command = """sed -i '/CyberCP/d' /etc/crontab"""
         Upgrade.executioner(command, command, 0, True)
 
+        # Ensure log directory exists for scheduled scans
+        if not os.path.exists('/usr/local/lscp/logs'):
+            try:
+                os.makedirs('/usr/local/lscp/logs', mode=0o755)
+            except:
+                pass
+
         if os.path.exists('/usr/local/lsws/conf/httpd.conf'):
             # Setup /usr/local/lsws/conf/httpd.conf to use new Logformat standard for better stats and accesslogs
             command = """sed -i "s|^LogFormat.*|LogFormat '%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"' combined|g" /usr/local/lsws/conf/httpd.conf"""
@@ -2990,6 +3173,7 @@ vmail
 0 0 * * 4 /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/renew.py >/dev/null 2>&1
 7 0 * * * "/root/.acme.sh"/acme.sh --cron --home "/root/.acme.sh" > /dev/null
 */3 * * * * if ! find /home/*/public_html/ -maxdepth 2 -type f -newer /usr/local/lsws/cgid -name '.htaccess' -exec false {} +; then /usr/local/lsws/bin/lswsctrl restart; fi
+* * * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/manage.py run_scheduled_scans >/usr/local/lscp/logs/scheduled_scans.log 2>&1
 """
 
                 writeToFile = open(cronPath, 'w')
@@ -3019,6 +3203,15 @@ vmail
                 writeToFile.write(content)
                 writeToFile.close()
 
+            # Add AI Scanner scheduled scans cron job if missing
+            if data.find('run_scheduled_scans') == -1:
+                content = """
+* * * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/manage.py run_scheduled_scans >/usr/local/lscp/logs/scheduled_scans.log 2>&1
+"""
+                writeToFile = open(cronPath, 'a')
+                writeToFile.write(content)
+                writeToFile.close()
+
 
         else:
             content = """
@@ -3030,6 +3223,7 @@ vmail
 7 0 * * * "/root/.acme.sh"/acme.sh --cron --home "/root/.acme.sh" > /dev/null
 0 0 * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/IncBackups/IncScheduler.py Daily
 0 0 * * 0 /usr/local/CyberCP/bin/python /usr/local/CyberCP/IncBackups/IncScheduler.py Weekly
+* * * * * /usr/local/CyberCP/bin/python /usr/local/CyberCP/manage.py run_scheduled_scans >/usr/local/lscp/logs/scheduled_scans.log 2>&1
 """
             writeToFile = open(cronPath, 'w')
             writeToFile.write(content)
@@ -3402,6 +3596,25 @@ pm.max_spare_servers = 3
             WriteToFile.close()
 
     @staticmethod
+    def setupPHPSymlink():
+        try:
+            # Remove existing PHP symlink if it exists
+            if os.path.exists('/usr/bin/php'):
+                os.remove('/usr/bin/php')
+
+            # Create symlink to PHP 8.0
+            command = 'ln -s /usr/local/lsws/lsphp80/bin/php /usr/bin/php'
+            Upgrade.executioner(command, 'Setup PHP Symlink', 0)
+
+            Upgrade.stdOut("PHP symlink created successfully.")
+
+        except BaseException as msg:
+            Upgrade.stdOut('[ERROR] ' + str(msg) + " [setupPHPSymlink]")
+            return 0
+
+        return 1
+
+    @staticmethod
     def upgrade(branch):
 
         if branch.find('SoftUpgrade') > -1:
@@ -3464,6 +3677,7 @@ pm.max_spare_servers = 3
             Upgrade.executioner(command, 'tmp adjustment', 0)
 
         Upgrade.dockerUsers()
+        Upgrade.setupPHPSymlink()
         Upgrade.setupComposer()
 
         ##
@@ -3517,6 +3731,9 @@ pm.max_spare_servers = 3
         Upgrade.someDirectories()
         Upgrade.installLSCPD(branch)
         Upgrade.FixCurrentQuoatasSystem()
+        
+        ## Fix Apache configuration issues after upgrade
+        Upgrade.fixApacheConfiguration()
 
         ### General migrations are not needed any more
 
@@ -3600,8 +3817,8 @@ pm.max_spare_servers = 3
                         try:
                             shutil.copy(backup_file, file)
                             print(f"Restored: {file}")
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Failed to restore {file}: {str(e)}")
                     else:
                         print(f"Backup not found for: {file}")
 
@@ -3611,38 +3828,40 @@ pm.max_spare_servers = 3
 
             execPath = "sudo /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/csf.py"
             execPath = execPath + " removeCSF"
-            Upgrade.executioner(execPath, 'fix csf if there', 0)
+            Upgrade.executioner(execPath, 'Remove CSF before reinstall', 0)
 
             execPath = "sudo /usr/local/CyberCP/bin/python /usr/local/CyberCP/plogical/csf.py"
             execPath = execPath + " installCSF"
+            Upgrade.executioner(execPath, 'Install CSF', 0)
 
-            # Restore the files
-            print("Restoring files...")
+            # Restore the files AFTER installation
+            print("Restoring CSF configuration files...")
             restore_files()
+            
+            # Restart CSF to apply restored configuration
+            command = 'csf -r'
+            Upgrade.executioner(command, 'Restart CSF with restored config', 0)
 
 
-            Upgrade.executioner(execPath, 'fix csf if there', 0)
 
+        if os.path.exists('/usr/local/CyberCP/configservercsf'):
+            command = 'rm -f /usr/local/CyberCP/configservercsf/signals.py'
+            Upgrade.executioner(command, 'remove /usr/local/CyberCP/configservercsf/signals.py', 1)
 
+            sed_commands = [
+                'sed -i "s/url(r\'^configservercsf/path(\'configservercsf/g" /usr/local/CyberCP/CyberCP/urls.py',
+                'sed -i "s/from django.conf.urls import url/from django.urls import path/g" /usr/local/CyberCP/configservercsf/urls.py',
+                'sed -i "s/import signals/from . import signals/g" /usr/local/CyberCP/configservercsf/apps.py',
+                'sed -i "s/url(r\'^$\'/path(\'\'/g" /usr/local/CyberCP/configservercsf/urls.py',
+                'sed -i "s|url(r\'^iframe/$\'|path(\'iframe/\'|g" /usr/local/CyberCP/configservercsf/urls.py',
+                'sed -i -E "s/from.*, response/from plogical.httpProc import httpProc/g" /usr/local/CyberCP/configservercsf/views.py',
+                'find /usr/local/CyberCP -name "*.pyc" -delete',
+                'find /usr/local/CyberCP -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true',
+                'killall lswsgi'
+            ]
 
-        # if os.path.exists('/usr/local/CyberCP/configservercsf'):
-        #     command = 'rm -f /usr/local/CyberCP/configservercsf/signals.py'
-        #     Upgrade.executioner(command, 'remove /usr/local/CyberCP/configservercsf/signals.py', 1)
-        #
-        #
-        # sed_commands = [
-        #     'sed -i "s/url(r\'^configservercsf/path(\'configservercsf/g" /usr/local/CyberCP/CyberCP/urls.py',
-        #     'sed -i "s/from django.conf.urls import url/from django.urls import path/g" /usr/local/CyberCP/configservercsf/urls.py',
-        #     'sed -i "s/import signals/import configservercsf.signals/g" /usr/local/CyberCP/configservercsf/apps.py',
-        #     'sed -i "s/url(r\'^$\'/path(\'\'/g" /usr/local/CyberCP/configservercsf/urls.py',
-        #     'sed -i "s|url(r\'^iframe/$\'|path(\'iframe/\'|g" /usr/local/CyberCP/configservercsf/urls.py',
-        #     'sed -i -E "s/from.*, response/from plogical.httpProc import httpProc/g" /usr/local/CyberCP/configservercsf/views.py'
-        #     '''sed -i -E "s#^(\s*)return render.*index\.html.*#\1proc = httpProc(request, 'configservercsf/index.html', None, 'admin')\n\1return proc.render()#g" /usr/local/CyberCP/configservercsf/views.py'''
-        #     'killall lswsgi'
-        # ]
-        #
-        # for cmd in sed_commands:
-        #     Upgrade.executioner(cmd, 'fix csf if there', 1)
+            for cmd in sed_commands:
+                Upgrade.executioner(cmd, 'fix csf if there', 1)
 
 
 
@@ -3680,6 +3899,9 @@ pm.max_spare_servers = 3
 
         Upgrade.installDNS_CyberPanelACMEFile()
 
+        command = 'systemctl restart fastapi_ssh_server'
+        Upgrade.executioner(command, command, 0)
+
         Upgrade.stdOut("Upgrade Completed.")
 
         ### remove log file path incase its there
@@ -3688,6 +3910,107 @@ pm.max_spare_servers = 3
             time.sleep(30)
             if os.path.exists(Upgrade.LogPathNew):
                 os.remove(Upgrade.LogPathNew)
+
+    @staticmethod
+    def fixApacheConfigurationOld():
+        """OLD VERSION - DO NOT USE - Fix Apache configuration issues after upgrade"""
+        try:
+            # Check if Apache is installed
+            if Upgrade.FindOperatingSytem() == CENTOS7 or Upgrade.FindOperatingSytem() == CENTOS8 \
+                    or Upgrade.FindOperatingSytem() == openEuler20 or Upgrade.FindOperatingSytem() == openEuler22:
+                apache_service = 'httpd'
+                apache_config_dir = '/etc/httpd'
+            else:
+                apache_service = 'apache2'
+                apache_config_dir = '/etc/apache2'
+            
+            # Check if Apache is installed
+            check_apache = f'systemctl is-enabled {apache_service} 2>/dev/null'
+            result = subprocess.run(check_apache, shell=True, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                Upgrade.stdOut("Fixing Apache configuration...")
+                
+                # 1. Ensure Apache ports are correctly configured
+                command = 'grep -q "Listen 8083" /usr/local/lsws/conf/httpd_config.xml || echo "Apache port configuration might need manual check"'
+                Upgrade.executioner(command, 'Check Apache ports', 1)
+                
+                # 2. Fix proxy rewrite rules for all vhosts
+                # The issue: Both rewrite rules execute, causing incorrect proxying
+                # Fix: Add proper HTTPS condition for SSL proxy rule
+                command = '''find /usr/local/lsws/conf/vhosts/ -name "vhost.conf" -exec sed -i '
+                    /^REWRITERULE.*proxyApacheBackendSSL/i\\
+RewriteCond %{HTTPS}  =on
+                ' {} \;'''
+                Upgrade.executioner(command, 'Fix Apache SSL proxy condition', 1)
+                
+                # Also ensure the proxy backends are properly configured
+                command = '''grep -q "extprocessor apachebackend" /usr/local/lsws/conf/httpd_config.conf || echo "
+extprocessor apachebackend {
+  type                    proxy
+  address                 http://127.0.0.1:8083
+  maxConns                100
+  initTimeout             60
+  retryTimeout            30
+  respBuffer              0
+}
+
+extprocessor proxyApacheBackendSSL {
+  type                    proxy
+  address                 https://127.0.0.1:8082
+  maxConns                100
+  initTimeout             60
+  retryTimeout            30
+  respBuffer              0
+}" >> /usr/local/lsws/conf/httpd_config.conf'''
+                Upgrade.executioner(command, 'Ensure Apache proxy backends exist', 1)
+                
+                # 3. Ensure Apache is configured to listen on correct ports
+                if Upgrade.FindOperatingSytem() in [CENTOS7, CENTOS8, openEuler20, openEuler22]:
+                    apache_port_conf = '/etc/httpd/conf.d/00-port.conf'
+                else:
+                    apache_port_conf = '/etc/apache2/ports.conf'
+                
+                command = f'''
+                grep -q "Listen 8082" {apache_port_conf} || echo "Listen 8082" >> {apache_port_conf}
+                grep -q "Listen 8083" {apache_port_conf} || echo "Listen 8083" >> {apache_port_conf}
+                '''
+                Upgrade.executioner(command, 'Ensure Apache listens on 8082/8083', 1)
+                
+                # 4. Restart Apache service
+                command = f'systemctl restart {apache_service}'
+                Upgrade.executioner(command, f'Restart {apache_service}', 1)
+                
+                # 5. Fix PHP-FPM socket permissions and restart services
+                for version in ['5.4', '5.5', '5.6', '7.0', '7.1', '7.2', '7.3', '7.4', '8.0', '8.1', '8.2', '8.3']:
+                    if Upgrade.FindOperatingSytem() in [CENTOS7, CENTOS8, openEuler20, openEuler22]:
+                        php_service = f'php{version.replace(".", "")}-php-fpm'
+                        socket_dir = '/var/run/php-fpm'
+                    else:
+                        php_service = f'php{version}-fpm'
+                        socket_dir = '/var/run/php'
+                    
+                    # Ensure socket directory exists with correct permissions
+                    command = f'''
+                    if systemctl is-active {php_service} >/dev/null 2>&1; then
+                        mkdir -p {socket_dir}
+                        chmod 755 {socket_dir}
+                        systemctl restart {php_service}
+                    fi
+                    '''
+                    Upgrade.executioner(command, f'Fix and restart {php_service}', 1)
+                
+                # 6. Reload LiteSpeed to apply proxy changes
+                command = '/usr/local/lsws/bin/lswsctrl reload'
+                Upgrade.executioner(command, 'Reload LiteSpeed', 1)
+                
+                Upgrade.stdOut("Apache configuration fixes completed.")
+            else:
+                Upgrade.stdOut("Apache not detected, skipping Apache fixes.")
+                
+        except Exception as e:
+            Upgrade.stdOut(f"Error fixing Apache configuration: {str(e)}")
+            pass
 
     @staticmethod
     def installQuota():
@@ -3978,6 +4301,367 @@ pm.max_spare_servers = 3
 
         command = f'chmod +x {filePath}'
         Upgrade.executioner(command, command, 0, True)
+
+    @staticmethod
+    def fixApacheConfiguration():
+        """
+        Fix Apache configuration issues after upgrade, particularly for 503 errors
+        when Apache is used as reverse proxy to OpenLiteSpeed
+        """
+        try:
+            print("Starting Apache configuration fix...")
+            
+            # Check if Apache is installed
+            osType = Upgrade.FindOperatingSytem()
+            if osType in [CENTOS7, CENTOS8, CloudLinux7, CloudLinux8]:
+                configBasePath = '/etc/httpd/conf.d/'
+                serviceName = 'httpd'
+            else:
+                configBasePath = '/etc/apache2/sites-enabled/'
+                serviceName = 'apache2'
+            
+            if not os.path.exists(configBasePath):
+                print("Apache not installed, skipping Apache fixes.")
+                return
+            
+            # Import required modules
+            from websiteFunctions.models import Websites
+            import re
+            
+            # Fix 1: Update Apache proxy configurations for domains actually using Apache
+            print("Fixing Apache proxy configurations...")
+            fixed_count = 0
+            apache_domains = []
+            
+            # First, identify which domains are using Apache by checking for Apache vhost configs
+            for config_file in os.listdir(configBasePath):
+                if config_file.endswith('.conf'):
+                    # Extract domain name from config file
+                    domain_name = config_file.replace('.conf', '')
+                    config_path = os.path.join(configBasePath, config_file)
+                    
+                    try:
+                        # Read the configuration to verify it's an Apache proxy setup
+                        with open(config_path, 'r') as f:
+                            content = f.read()
+                        
+                        # Check if this is actually an Apache proxy configuration
+                        # Look for common Apache proxy indicators
+                        is_apache_proxy = False
+                        if 'ProxyPass' in content and ('127.0.0.1:8082' in content or '127.0.0.1:8083' in content):
+                            is_apache_proxy = True
+                        elif 'RewriteRule' in content and 'apachebackend' in content:
+                            is_apache_proxy = True
+                        elif '<FilesMatch' in content and 'SetHandler' in content and 'proxy:unix:' in content:
+                            is_apache_proxy = True
+                        
+                        if is_apache_proxy:
+                            apache_domains.append(domain_name)
+                            modified = False
+                            
+                            # Fix the proxy rewrite rules - add missing HTTPS condition
+                            if 'RewriteRule ^/(.*)$ http://apachebackend/$1 [P,L]' in content and 'RewriteCond %{HTTPS} off' not in content:
+                                # Find the RewriteRule for HTTP proxy
+                                lines = content.split('\n')
+                                new_lines = []
+                                i = 0
+                                while i < len(lines):
+                                    line = lines[i]
+                                    if 'RewriteRule ^/(.*)$ http://apachebackend/$1 [P,L]' in line:
+                                        # Add the missing HTTPS condition before the rule
+                                        indent = len(line) - len(line.lstrip())
+                                        new_lines.append(' ' * indent + 'RewriteCond %{HTTPS} off')
+                                        new_lines.append(line)
+                                        modified = True
+                                    else:
+                                        new_lines.append(line)
+                                    i += 1
+                                
+                                if modified:
+                                    content = '\n'.join(new_lines)
+                            
+                            # Write back if modified
+                            if modified:
+                                with open(config_path, 'w') as f:
+                                    f.write(content)
+                                fixed_count += 1
+                                print(f"Fixed Apache configuration for: {config_file}")
+                    
+                    except Exception as e:
+                        print(f"Error processing {config_file}: {str(e)}")
+            
+            print(f"Found {len(apache_domains)} domains using Apache")
+            print(f"Fixed {fixed_count} Apache configurations.")
+            
+            # If no domains are using Apache, skip the rest of the fixes
+            if len(apache_domains) == 0:
+                print("No domains found using Apache as reverse proxy. Skipping remaining Apache fixes.")
+                return
+            
+            # Fix 2: Ensure Apache proxy backends are configured in OLS/LSWS
+            print("Checking OpenLiteSpeed proxy backend configurations...")
+            lsws_config = "/usr/local/lsws/conf/httpd_config.conf"
+            
+            if os.path.exists(lsws_config):
+                with open(lsws_config, 'r') as f:
+                    lsws_content = f.read()
+                
+                modified = False
+                
+                # Check for apachebackend extprocessor
+                if 'extprocessor apachebackend' not in lsws_content:
+                    # Add apachebackend configuration
+                    backend_config = '''
+extprocessor apachebackend {
+  type                    proxy
+  address                 127.0.0.1:8082
+  maxConns                100
+  initTimeout             60
+  retryTimeout            60
+  respBuffer              0
+}
+'''
+                    lsws_content += backend_config
+                    modified = True
+                    print("Added apachebackend extprocessor configuration")
+                
+                # Check for proxyApacheBackendSSL extprocessor
+                if 'extprocessor proxyApacheBackendSSL' not in lsws_content:
+                    # Add proxyApacheBackendSSL configuration
+                    ssl_backend_config = '''
+extprocessor proxyApacheBackendSSL {
+  type                    proxy
+  address                 https://127.0.0.1:8083
+  maxConns                100
+  initTimeout             60
+  retryTimeout            60
+  respBuffer              0
+}
+'''
+                    lsws_content += ssl_backend_config
+                    modified = True
+                    print("Added proxyApacheBackendSSL extprocessor configuration")
+                
+                if modified:
+                    with open(lsws_config, 'w') as f:
+                        f.write(lsws_content)
+                    print("Updated OpenLiteSpeed configuration with Apache proxy backends")
+            
+            # Fix 3: Create/Update .htaccess files ONLY for domains actually using Apache
+            print("Creating/Updating .htaccess files for Apache domains...")
+            htaccess_fixed = 0
+            htaccess_created = 0
+            
+            # Only process domains that we confirmed are using Apache
+            for domain in apache_domains:
+                try:
+                    htaccess_path = f'/home/{domain}/public_html/.htaccess'
+                    
+                    # Check if .htaccess exists
+                    if os.path.exists(htaccess_path):
+                        with open(htaccess_path, 'r') as f:
+                            htaccess_content = f.read()
+                        
+                        # Check if it's an Apache proxy configuration (case insensitive)
+                        if 'apachebackend' in htaccess_content.lower():
+                            # Check if it has proper HTTP/HTTPS handling
+                            needs_update = False
+                            
+                            # Check for old style single rule
+                            if 'REWRITERULE ^(.*)$ HTTP://apachebackend/$1 [P]' in htaccess_content:
+                                needs_update = True
+                            # Check if missing HTTPS conditions
+                            elif 'RewriteCond %{HTTPS} off' not in htaccess_content or 'proxyApacheBackendSSL' not in htaccess_content:
+                                needs_update = True
+                            
+                            if needs_update:
+                                # Create proper .htaccess with both HTTP and HTTPS handling
+                                new_htaccess = '''RewriteEngine On
+
+# HTTP to backend
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ http://apachebackend/$1 [P,L]
+
+# HTTPS to SSL backend  
+RewriteCond %{HTTPS} on
+RewriteRule ^(.*)$ https://proxyApacheBackendSSL/$1 [P,L]
+'''
+                                with open(htaccess_path, 'w') as f:
+                                    f.write(new_htaccess)
+                                htaccess_fixed += 1
+                                print(f"Fixed .htaccess for: {domain}")
+                    else:
+                        # .htaccess doesn't exist - this domain might be missing it!
+                        # Create the proper .htaccess file
+                        print(f"Creating missing .htaccess for Apache domain: {domain}")
+                        
+                        # Ensure public_html exists
+                        public_html_path = f'/home/{domain}/public_html'
+                        if os.path.exists(public_html_path):
+                            new_htaccess = '''RewriteEngine On
+
+# HTTP to backend
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ http://apachebackend/$1 [P,L]
+
+# HTTPS to SSL backend  
+RewriteCond %{HTTPS} on
+RewriteRule ^(.*)$ https://proxyApacheBackendSSL/$1 [P,L]
+'''
+                            with open(htaccess_path, 'w') as f:
+                                f.write(new_htaccess)
+                            
+                            # Set proper permissions
+                            try:
+                                website = Websites.objects.get(domain=domain)
+                                command = f'chown {website.externalApp}:{website.externalApp} {htaccess_path}'
+                                Upgrade.executioner(command, command, 0, True)
+                            except:
+                                pass
+                            
+                            htaccess_created += 1
+                            print(f"Created .htaccess for: {domain}")
+                        else:
+                            print(f"Warning: public_html not found for domain: {domain}")
+                            
+                except Exception as e:
+                    print(f"Error updating .htaccess for {domain}: {str(e)}")
+            
+            print(f"Fixed {htaccess_fixed} .htaccess files.")
+            print(f"Created {htaccess_created} missing .htaccess files.")
+            
+            # Fix 3b: Also fix OpenLiteSpeed vhost configurations that might have incorrect rewrite rules
+            print("Fixing OpenLiteSpeed vhost configurations for Apache domains...")
+            ols_fixed = 0
+            
+            for domain in apache_domains:
+                try:
+                    ols_vhost_path = f'/usr/local/lsws/conf/vhosts/{domain}/vhost.conf'
+                    
+                    if os.path.exists(ols_vhost_path):
+                        with open(ols_vhost_path, 'r') as f:
+                            vhost_content = f.read()
+                        
+                        # Check if it has the incorrect rewrite rules
+                        if 'RewriteCond %{HTTPS}  !=on' in vhost_content and 'HTTP://proxyApacheBackendSSL' in vhost_content:
+                            # This has the buggy configuration where HTTPS rule doesn't have proper condition
+                            modified = False
+                            
+                            # Replace the buggy rewrite section
+                            buggy_pattern = r'rewrite\s*{\s*enable\s*1\s*rules\s*<<<END_rules\s*RewriteEngine On\s*RewriteCond %{HTTPS}\s*!=on\s*REWRITERULE \^\(\.\*\)\$ HTTP://apachebackend/\$1 \[P,L\]\s*REWRITERULE \^\(\.\*\)\$ HTTP://proxyApacheBackendSSL/\$1 \[P,L\]\s*END_rules\s*}'
+                            
+                            correct_rewrite = '''rewrite  {
+  enable                  1
+  rules                   <<<END_rules
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ http://apachebackend/$1 [P,L]
+RewriteCond %{HTTPS} on
+RewriteRule ^(.*)$ https://proxyApacheBackendSSL/$1 [P,L]
+  END_rules
+}'''
+                            
+                            # Use a simpler approach - find and replace the section
+                            import re
+                            new_content = re.sub(
+                                r'rewrite\s*{[^}]+}',
+                                correct_rewrite,
+                                vhost_content,
+                                count=1
+                            )
+                            
+                            if new_content != vhost_content:
+                                with open(ols_vhost_path, 'w') as f:
+                                    f.write(new_content)
+                                ols_fixed += 1
+                                print(f"Fixed OLS vhost configuration for: {domain}")
+                        
+                except Exception as e:
+                    print(f"Error fixing OLS vhost for {domain}: {str(e)}")
+            
+            if ols_fixed > 0:
+                print(f"Fixed {ols_fixed} OpenLiteSpeed vhost configurations.")
+            
+            # Fix 4: Ensure Apache is listening on correct ports
+            if osType in [CENTOS7, CENTOS8, CloudLinux7, CloudLinux8]:
+                apache_conf = '/etc/httpd/conf/httpd.conf'
+            else:
+                ports_conf = '/etc/apache2/ports.conf'
+                apache_conf = ports_conf if os.path.exists(ports_conf) else '/etc/apache2/apache2.conf'
+            
+            if os.path.exists(apache_conf):
+                with open(apache_conf, 'r') as f:
+                    conf_content = f.read()
+                
+                # Check if Apache is configured to listen on 8082 and 8083
+                if 'Listen 8082' not in conf_content or 'Listen 8083' not in conf_content:
+                    print("Fixing Apache listen ports...")
+                    
+                    # For Ubuntu/Debian, update ports.conf
+                    if osType not in [CENTOS7, CENTOS8, CloudLinux7, CloudLinux8]:
+                        if os.path.exists('/etc/apache2/ports.conf'):
+                            with open('/etc/apache2/ports.conf', 'w') as f:
+                                f.write('Listen 8082\nListen 8083\n')
+                    else:
+                        # For CentOS, update httpd.conf
+                        lines = conf_content.split('\n')
+                        new_lines = []
+                        listen_added = False
+                        
+                        for line in lines:
+                            if line.strip().startswith('Listen') and '80' in line and not listen_added:
+                                new_lines.append('Listen 8082')
+                                new_lines.append('Listen 8083')
+                                listen_added = True
+                            elif 'Listen 8082' not in line and 'Listen 8083' not in line:
+                                new_lines.append(line)
+                        
+                        with open(apache_conf, 'w') as f:
+                            f.write('\n'.join(new_lines))
+                    
+                    print("Fixed Apache listen ports")
+            
+            # Fix 5: Fix PHP-FPM socket permissions
+            print("Fixing PHP-FPM socket permissions...")
+            if osType in [CENTOS7, CENTOS8, CloudLinux7, CloudLinux8]:
+                sock_path = '/var/run/php-fpm/'
+            else:
+                sock_path = '/var/run/php/'
+            
+            if os.path.exists(sock_path):
+                # Set proper permissions
+                command = f'chmod 755 {sock_path}'
+                Upgrade.executioner(command, command, 0, True)
+                
+                # Fix ownership
+                command = f'chown apache:apache {sock_path}' if osType in [CENTOS7, CENTOS8, CloudLinux7, CloudLinux8] else f'chown www-data:www-data {sock_path}'
+                Upgrade.executioner(command, command, 0, True)
+            
+            # Restart services
+            print("Restarting services...")
+            
+            # Restart Apache
+            command = f'systemctl restart {serviceName}'
+            Upgrade.executioner(command, command, 0, True)
+            
+            # Restart OpenLiteSpeed
+            command = 'systemctl restart lsws'
+            Upgrade.executioner(command, command, 0, True)
+            
+            # Restart PHP-FPM services
+            if osType in [CENTOS7, CENTOS8, CloudLinux7, CloudLinux8]:
+                for version in ['54', '55', '56', '70', '71', '72', '73', '74', '80', '81', '82', '83', '84']:
+                    command = f'systemctl restart php{version}-php-fpm'
+                    Upgrade.executioner(command, command, 0, True)
+            else:
+                for version in ['5.6', '7.0', '7.1', '7.2', '7.3', '7.4', '8.0', '8.1', '8.2', '8.3']:
+                    command = f'systemctl restart php{version}-fpm'
+                    Upgrade.executioner(command, command, 0, True)
+            
+            print("Apache configuration fix completed successfully!")
+            
+        except Exception as e:
+            print(f"Error during Apache configuration fix: {str(e)}")
 
 
 
