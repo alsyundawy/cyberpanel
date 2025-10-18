@@ -125,7 +125,7 @@ class mailUtilities:
         "authPlainLine": false
     },
     "Sieve": {
-        "host": "",
+        "host": "localhost",
         "port": 4190,
         "type": 0,
         "timeout": 10,
@@ -404,20 +404,15 @@ class mailUtilities:
     @staticmethod
     def changeEmailPassword(email, newPassword, encrypt = None):
         try:
+            changePass = EUsers.objects.get(email=email)
             if encrypt == None:
-                CentOSPath = '/etc/redhat-release'
-                changePass = EUsers.objects.get(email=email)
-                if os.path.exists(CentOSPath):
-                    password = bcrypt.hashpw(newPassword.encode('utf-8'), bcrypt.gensalt())
-                    password = '{CRYPT}%s' % (password.decode())
-                    changePass.password = password
-                else:
-                    changePass.password = newPassword
-                changePass.save()
+                # Always use bcrypt hashing regardless of OS
+                password = bcrypt.hashpw(newPassword.encode('utf-8'), bcrypt.gensalt())
+                password = '{CRYPT}%s' % (password.decode())
+                changePass.password = password
             else:
-                changePass = EUsers.objects.get(email=email)
                 changePass.password = newPassword
-                changePass.save()
+            changePass.save()
             return 0,'None'
         except BaseException as msg:
             return 0, str(msg)
@@ -1837,7 +1832,7 @@ class MailServerManagerUtils(multi.Thread):
 
             if ProcessUtilities.decideDistro() == ProcessUtilities.centos:
 
-                command = 'yum --nogpg install https://mirror.ghettoforge.org/distributions/gf/gf-release-latest.gf.el7.noarch.rpm -y'
+                command = 'yum --nogpg install https://mirror.ghettoforge.net/distributions/gf/gf-release-latest.gf.el7.noarch.rpm -y'
                 ProcessUtilities.executioner(command)
 
                 command = 'yum install --enablerepo=gf-plus -y postfix3 postfix3-ldap postfix3-mysql postfix3-pcre'
@@ -1848,11 +1843,11 @@ class MailServerManagerUtils(multi.Thread):
                 version = int(clAPVersion.split('-')[1])
 
                 if type == 'al' and version >= 90:
-                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.org/distributions/gf/gf-release-latest.gf.el9.noarch.rpm'
+                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.net/distributions/gf/gf-release-latest.gf.el9.noarch.rpm'
                     ProcessUtilities.executioner(command)
 
                 else:
-                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.org/distributions/gf/gf-release-latest.gf.el8.noarch.rpm'
+                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.net/distributions/gf/gf-release-latest.gf.el8.noarch.rpm'
                     ProcessUtilities.executioner(command)
 
                 command = 'dnf install --enablerepo=gf-plus postfix3 postfix3-mysql -y'

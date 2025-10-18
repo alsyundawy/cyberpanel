@@ -943,7 +943,7 @@ class MailServerManager(multi.Thread):
                 command = 'yum install --enablerepo=gf-plus -y postfix3 postfix3-ldap postfix3-mysql postfix3-pcre'
             elif ProcessUtilities.decideDistro() == ProcessUtilities.cent8:
 
-                command = 'dnf --nogpg install -y https://mirror.ghettoforge.org/distributions/gf/el/8/gf/x86_64/gf-release-8-11.gf.el8.noarch.rpm'
+                command = 'dnf --nogpg install -y https://mirror.ghettoforge.net/distributions/gf/gf-release-latest.gf.el8.noarch.rpm'
                 ProcessUtilities.executioner(command)
 
                 command = 'dnf install --enablerepo=gf-plus postfix3 postfix3-mysql -y'
@@ -1546,7 +1546,35 @@ milter_default_action = accept
         command = "chown -R root:root /usr/local/lscp"
         ProcessUtilities.executioner(command)
 
-        command = "chown -R lscpd:lscpd /usr/local/lscp/cyberpanel/snappymail/data"
+        # Ensure SnappyMail directories exist before setting permissions
+        command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/configs/"
+        ProcessUtilities.executioner(command)
+
+        command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/domains/"
+        ProcessUtilities.executioner(command)
+
+        command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/storage/"
+        ProcessUtilities.executioner(command)
+
+        command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/temp/"
+        ProcessUtilities.executioner(command)
+
+        command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/cache/"
+        ProcessUtilities.executioner(command)
+
+        command = "chown -R lscpd:lscpd /usr/local/lscp/cyberpanel/snappymail/"
+        ProcessUtilities.executioner(command)
+
+        # Set proper permissions for data directories (group writable)
+        command = "chmod -R 775 /usr/local/lscp/cyberpanel/snappymail/data/"
+        ProcessUtilities.executioner(command)
+
+        # Ensure web server users are in the lscpd group for access
+        command = "usermod -a -G lscpd nobody 2>/dev/null || true"
+        ProcessUtilities.executioner(command)
+
+        # Fix SnappyMail public directory ownership (critical fix)
+        command = "chown -R lscpd:lscpd /usr/local/CyberCP/public/snappymail/data 2>/dev/null || true"
         ProcessUtilities.executioner(command)
 
         command = "chmod 700 /usr/local/CyberCP/cli/cyberPanel.py"
@@ -1658,6 +1686,99 @@ milter_default_action = accept
 
         ###
 
+    def installSieveAfterReset(self):
+        """Reinstall and configure Sieve after email debugger reset"""
+        try:
+            from plogical.processUtilities import ProcessUtilities
+            
+            # Determine distribution
+            if ProcessUtilities.decideDistro() == ProcessUtilities.ubuntu:
+                # Install dovecot-sieve and dovecot-managesieved
+                command = 'DEBIAN_FRONTEND=noninteractive apt-get -y install dovecot-sieve dovecot-managesieved'
+                ProcessUtilities.executioner(command)
+            else:
+                # For CentOS/AlmaLinux/OpenEuler
+                command = 'yum -y install dovecot-pigeonhole'
+                ProcessUtilities.executioner(command)
+            
+            # Add Sieve port 4190 to firewall
+            from plogical.firewallUtilities import FirewallUtilities
+            FirewallUtilities.addSieveFirewallRule()
+            
+            # Configure Sieve in dovecot
+            self.configureSieveInDovecot()
+            
+            logging.CyberCPLogFileWriter.writeToFile("Sieve reinstalled and configured after email reset")
+            return 1
+            
+        except BaseException as msg:
+            logging.CyberCPLogFileWriter.writeToFile("Failed to reinstall Sieve after email reset: " + str(msg))
+            return 0
+
+    def configureSieveInDovecot(self):
+        """Configure Sieve in Dovecot configuration"""
+        try:
+            # Enable Sieve plugin in dovecot
+            sieve_config = """
+# Sieve configuration
+protocol lmtp {
+  mail_plugins = $mail_plugins sieve
+}
+
+protocol lda {
+  mail_plugins = $mail_plugins sieve
+}
+
+plugin {
+  sieve = file:~/sieve;active=~/.dovecot.sieve
+  sieve_global_path = /var/lib/dovecot/sieve/default.sieve
+  sieve_dir = ~/sieve
+  sieve_global_dir = /var/lib/dovecot/sieve/
+  sieve_extensions = +notify +imapflags
+  sieve_max_script_size = 1M
+  sieve_quota_max_scripts = 0
+  sieve_quota_max_storage = 0
+}
+
+service managesieve-login {
+  inet_listener sieve {
+    port = 4190
+  }
+  inet_listener sieve_deprecated {
+    port = 2000
+  }
+}
+
+service managesieve {
+  process_limit = 1024
+}
+
+protocol sieve {
+  managesieve_max_line_length = 65536
+  managesieve_implementation_string = dovecot
+  managesieve_logout_format = bytes ( in=%i, out=%o )
+}
+"""
+            
+            # Write Sieve configuration to dovecot
+            config_path = "/etc/dovecot/conf.d/90-sieve.conf"
+            with open(config_path, 'w') as f:
+                f.write(sieve_config)
+            
+            # Create sieve directories
+            ProcessUtilities.executioner('mkdir -p /var/lib/dovecot/sieve')
+            ProcessUtilities.executioner('chown -R vmail:vmail /var/lib/dovecot/sieve')
+            
+            # Restart dovecot to apply changes
+            ProcessUtilities.executioner('systemctl restart dovecot')
+            
+            logging.CyberCPLogFileWriter.writeToFile("Sieve configured in Dovecot successfully")
+            return 1
+            
+        except BaseException as msg:
+            logging.CyberCPLogFileWriter.writeToFile("Failed to configure Sieve in Dovecot: " + str(msg))
+            return 0
+
     def ResetEmailConfigurations(self):
         try:
             ### Check if remote or local mysql
@@ -1698,6 +1819,10 @@ milter_default_action = accept
 
             if self.install_postfix_dovecot() == 0:
                 return 0
+
+            # Ensure Sieve remains functional after email debugger reset
+            logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'], 'Reinstalling Sieve after email reset..,45')
+            self.installSieveAfterReset()
 
             logging.CyberCPLogFileWriter.statusWriter(self.extraArgs['tempStatusPath'], 'Resetting configurations..,40')
 

@@ -17,7 +17,7 @@ import secrets
 import install_utils
 
 VERSION = '2.4'
-BUILD = 2
+BUILD = 4
 
 # Using shared char_set from install_utils
 char_set = install_utils.char_set
@@ -504,6 +504,73 @@ class preFlightsChecks:
         self.stdOut("Install psmisc")
         self.install_package("psmisc")
 
+    def generate_secure_env_file(self, mysql_root_password, cyberpanel_db_password):
+        """
+        Generate secure .env file with random passwords during installation
+        """
+        try:
+            import sys
+            import socket
+            
+            # Import the environment generator
+            sys.path.append(os.path.join(self.cyberPanelPath, 'install'))
+            from env_generator import create_env_file, create_env_backup
+            
+            # Generate secure credentials
+            credentials = create_env_file(
+                self.cyberPanelPath, 
+                mysql_root_password, 
+                cyberpanel_db_password
+            )
+            
+            # Create backup for recovery
+            create_env_backup(self.cyberPanelPath, credentials)
+            
+            logging.InstallLog.writeToFile("✓ Secure .env file generated successfully")
+            logging.InstallLog.writeToFile("✓ Credentials backup created for recovery")
+            
+            return credentials
+            
+        except Exception as e:
+            logging.InstallLog.writeToFile(f"[ERROR] Failed to generate secure environment file: {str(e)}")
+            # Fallback to original method if environment generation fails
+            self.fallback_settings_update(mysql_root_password, cyberpanel_db_password)
+
+    def fallback_settings_update(self, mysqlPassword, password):
+        """
+        Fallback method to update settings.py directly if environment generation fails
+        """
+        logging.InstallLog.writeToFile("Using fallback method for settings.py update")
+        
+        path = self.cyberPanelPath + "/CyberCP/settings.py"
+        data = open(path, "r").readlines()
+        writeDataToFile = open(path, "w")
+        counter = 0
+
+        for items in data:
+            if items.find('SECRET_KEY') > -1:
+                SK = "SECRET_KEY = '%s'\n" % (generate_pass(50))
+                writeDataToFile.writelines(SK)
+                continue
+
+            if items.find("'PASSWORD':") > -1:
+                if counter == 0:
+                    writeDataToFile.writelines("        'PASSWORD': '" + mysqlPassword + "'," + "\n")
+                    counter = counter + 1
+                else:
+                    writeDataToFile.writelines("        'PASSWORD': '" + password + "'," + "\n")
+            elif items.find('127.0.0.1') > -1:
+                writeDataToFile.writelines("        'HOST': 'localhost',\n")
+            elif items.find("'PORT':'3307'") > -1:
+                writeDataToFile.writelines("        'PORT': '',\n")
+            else:
+                writeDataToFile.writelines(items)
+
+        if self.distro == ubuntu:
+            os.fchmod(writeDataToFile.fileno(), stat.S_IRUSR | stat.S_IWUSR)
+
+        writeDataToFile.close()
+
     def download_install_CyberPanel(self, mysqlPassword, mysql):
         ##
 
@@ -549,50 +616,12 @@ password="%s"
 
         logging.InstallLog.writeToFile("Updating /root/.my.cnf!")
 
-        logging.InstallLog.writeToFile("Updating settings.py!")
+        logging.InstallLog.writeToFile("Generating secure environment configuration!")
 
-        path = self.cyberPanelPath + "/CyberCP/settings.py"
+        # Generate secure environment file instead of hardcoding passwords
+        self.generate_secure_env_file(mysqlPassword, password)
 
-        data = open(path, "r").readlines()
-
-        writeDataToFile = open(path, "w")
-
-        counter = 0
-
-        for items in data:
-            if items.find('SECRET_KEY') > -1:
-                SK = "SECRET_KEY = '%s'\n" % (generate_pass(50))
-                writeDataToFile.writelines(SK)
-                continue
-
-            if mysql == 'Two':
-                if items.find("'PASSWORD':") > -1:
-                    if counter == 0:
-                        writeDataToFile.writelines("        'PASSWORD': '" + mysqlPassword + "'," + "\n")
-                        counter = counter + 1
-                    else:
-                        writeDataToFile.writelines("        'PASSWORD': '" + password + "'," + "\n")
-
-                else:
-                    writeDataToFile.writelines(items)
-            else:
-                if items.find("'PASSWORD':") > -1:
-                    if counter == 0:
-                        writeDataToFile.writelines("        'PASSWORD': '" + mysqlPassword + "'," + "\n")
-                        counter = counter + 1
-                    else:
-                        writeDataToFile.writelines("        'PASSWORD': '" + password + "'," + "\n")
-                elif items.find('127.0.0.1') > -1:
-                    writeDataToFile.writelines("        'HOST': 'localhost',\n")
-                elif items.find("'PORT':'3307'") > -1:
-                    writeDataToFile.writelines("        'PORT': '',\n")
-                else:
-                    writeDataToFile.writelines(items)
-
-        if self.distro == ubuntu:
-            os.fchmod(writeDataToFile.fileno(), stat.S_IRUSR | stat.S_IWUSR)
-
-        writeDataToFile.close()
+        logging.InstallLog.writeToFile("Environment configuration generated successfully!")
 
         if self.remotemysql == 'ON':
             command = "sed -i 's|localhost|%s|g' %s" % (self.mysqlhost, path)
@@ -796,7 +825,38 @@ password="%s"
         command = 'chmod 640 /usr/local/lscp/cyberpanel/logs/access.log'
         preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-        command = 'mkdir -p/usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/configs/'
+        # Create complete SnappyMail directory structure early in installation
+        command = 'mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/configs/'
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        command = 'mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/domains/'
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        command = 'mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/storage/'
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        command = 'mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/temp/'
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        command = 'mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/cache/'
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        # Set proper ownership early
+        command = "chown -R lscpd:lscpd /usr/local/lscp/cyberpanel/snappymail/"
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        # Set proper permissions - make all data directories group writable
+        command = "chmod -R 775 /usr/local/lscp/cyberpanel/snappymail/data/"
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        # Ensure the web server user (nobody) can access the directories
+        # Note: lscpd is already added to nobody group earlier in the installation
+        command = "usermod -a -G lscpd nobody 2>/dev/null || true"
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+        # Fix SnappyMail public directory ownership early
+        command = "chown -R lscpd:lscpd /usr/local/CyberCP/public/snappymail/data 2>/dev/null || true"
+        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
         snappymailinipath = '/usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/configs/application.ini'
 
@@ -951,10 +1011,10 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
                 version = int(clAPVersion.split('-')[1])
 
                 if type == 'al' and version >= 90:
-                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.org/distributions/gf/gf-release-latest.gf.el9.noarch.rpm'
+                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.net/distributions/gf/gf-release-latest.gf.el9.noarch.rpm'
                     preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
                 else:
-                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.org/distributions/gf/gf-release-latest.gf.el8.noarch.rpm'
+                    command = 'dnf --nogpg install -y https://mirror.ghettoforge.net/distributions/gf/gf-release-latest.gf.el8.noarch.rpm'
                     preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
                 command = 'dnf install --enablerepo=gf-plus postfix3 postfix3-mysql -y'
@@ -1405,6 +1465,38 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
 
             ######
 
+            # Create SnappyMail data directories with proper structure
+            command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/configs/"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/domains/"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/storage/"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/temp/"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            command = "mkdir -p /usr/local/lscp/cyberpanel/snappymail/data/_data_/_default_/cache/"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            # Set proper ownership for SnappyMail data directories
+            command = "chown -R lscpd:lscpd /usr/local/lscp/cyberpanel/snappymail/"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            # Set proper permissions for SnappyMail data directories (group writable)
+            command = "chmod -R 775 /usr/local/lscp/cyberpanel/snappymail/data/"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            # Ensure web server users are in the lscpd group for access
+            command = "usermod -a -G lscpd nobody 2>/dev/null || true"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            # Fix SnappyMail public directory ownership immediately after creation
+            command = "chown -R lscpd:lscpd /usr/local/CyberCP/public/snappymail/data 2>/dev/null || true"
+            preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
             command = "mkdir -p /usr/local/lscp/cyberpanel/rainloop/data"
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
@@ -1654,7 +1746,7 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             #     lscpdSelection = 'lscpd-0.3.1'
             #     if os.path.exists('/etc/lsb-release'):
             #         result = open('/etc/lsb-release', 'r').read()
-            #         if result.find('22.04') > -1:
+            #         if result.find('22.04') > -1 or result.find('24.04') > -1:
             #             lscpdSelection = 'lscpd.0.4.0'
             # else:
             #     lscpdSelection = 'lscpd.aarch64'
@@ -1669,7 +1761,7 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
                     lscpdSelection = 'lscpd-0.3.1'
                     if os.path.exists('/etc/lsb-release'):
                         result = open('/etc/lsb-release', 'r').read()
-                        if result.find('22.04') > -1:
+                        if result.find('22.04') > -1 or result.find('24.04') > -1:
                             lscpdSelection = 'lscpd.0.4.0'
                 else:
                     lscpdSelection = 'lscpd.aarch64'
@@ -1679,7 +1771,7 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
                 lscpdSelection = 'lscpd-0.3.1'
                 if os.path.exists('/etc/lsb-release'):
                     result = open('/etc/lsb-release', 'r').read()
-                    if result.find('22.04') > -1:
+                    if result.find('22.04') > -1 or result.find('24.04') > -1:
                         lscpdSelection = 'lscpd.0.4.0'
 
 
@@ -1700,11 +1792,8 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             command = 'openssl req -newkey rsa:1024 -new -nodes -x509 -days 3650 -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=www.example.com" -keyout /usr/local/lscp/conf/key.pem -out /usr/local/lscp/conf/cert.pem'
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-            try:
-                os.remove("/usr/local/lscp/fcgi-bin/lsphp")
-                shutil.copy("/usr/local/lsws/lsphp80/bin/lsphp", "/usr/local/lscp/fcgi-bin/lsphp")
-            except:
-                pass
+            # Create lsphp symlink for fcgi-bin with better error handling
+            self.setup_lsphp_symlink()
 
             if self.is_centos_family():
                 command = 'adduser lscpd -M -d /usr/local/lscp'
@@ -2039,16 +2128,26 @@ $cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php?logout';
             latest = getVersion.json()
         except BaseException as msg:
 
-            command = "pip uninstall --yes urllib3"
+            # Handle Ubuntu 24.04's externally-managed-environment policy
+            pip_flags = ""
+            if self.distro == ubuntu:
+                try:
+                    release = install_utils.get_Ubuntu_release(use_print=False, exit_on_error=False)
+                    if release and release >= 24.04:
+                        pip_flags = " --break-system-packages"
+                except:
+                    pass  # If version detection fails, try without flags
+
+            command = f"pip uninstall --yes{pip_flags} urllib3"
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-            command = "pip uninstall --yes requests"
+            command = f"pip uninstall --yes{pip_flags} requests"
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-            command = "pip install http://mirror.cyberpanel.net/urllib3-1.22.tar.gz"
+            command = f"pip install{pip_flags} http://mirror.cyberpanel.net/urllib3-1.22.tar.gz"
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-            command = "pip install http://mirror.cyberpanel.net/requests-2.18.4.tar.gz"
+            command = f"pip install{pip_flags} http://mirror.cyberpanel.net/requests-2.18.4.tar.gz"
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
     def installation_successfull(self):
@@ -2156,19 +2255,149 @@ milter_default_action = accept
 
     def setupPHPSymlink(self):
         try:
+            # Check if PHP 8.2 exists
+            if not os.path.exists('/usr/local/lsws/lsphp82/bin/php'):
+                logging.InstallLog.writeToFile("[setupPHPSymlink] PHP 8.2 not found, ensuring it's installed...")
+                
+                # Install PHP 8.2 based on OS
+                if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
+                    command = 'yum install lsphp82 lsphp82-* -y'
+                else:
+                    command = 'DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp82 lsphp82-*'
+                
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            # Check if PHP 8.3 exists
+            if not os.path.exists('/usr/local/lsws/lsphp83/bin/php'):
+                logging.InstallLog.writeToFile("[setupPHPSymlink] PHP 8.3 not found, ensuring it's installed...")
+                
+                # Install PHP 8.3 based on OS
+                if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
+                    command = 'yum install lsphp83 lsphp83-* -y'
+                else:
+                    command = 'DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp83 lsphp83-*'
+                
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                
+                # Verify installation
+                if not os.path.exists('/usr/local/lsws/lsphp83/bin/php'):
+                    logging.InstallLog.writeToFile('[ERROR] Failed to install PHP 8.3')
+                    return 0
+
+            # Install PHP 8.4
+            if not os.path.exists('/usr/local/lsws/lsphp84/bin/php'):
+                logging.InstallLog.writeToFile("[setupPHPSymlink] PHP 8.4 not found, ensuring it's installed...")
+                
+                if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
+                    command = 'yum install lsphp84 lsphp84-* -y'
+                else:
+                    command = 'DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp84 lsphp84-*'
+                
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
+            # Install PHP 8.5
+            if not os.path.exists('/usr/local/lsws/lsphp85/bin/php'):
+                logging.InstallLog.writeToFile("[setupPHPSymlink] PHP 8.5 not found, ensuring it's installed...")
+                
+                if self.distro == centos or self.distro == cent8 or self.distro == openeuler:
+                    command = 'yum install lsphp85 lsphp85-* -y'
+                else:
+                    command = 'DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install lsphp85 lsphp85-*'
+                
+                preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            
             # Remove existing PHP symlink if it exists
             if os.path.exists('/usr/bin/php'):
                 os.remove('/usr/bin/php')
 
-            # Create symlink to PHP 8.0
-            command = 'ln -s /usr/local/lsws/lsphp80/bin/php /usr/bin/php'
+            # Create symlink to PHP 8.3 (default)
+            command = 'ln -s /usr/local/lsws/lsphp83/bin/php /usr/bin/php'
             preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
 
-            logging.InstallLog.writeToFile("[setupPHPSymlink] PHP symlink created successfully.")
+            logging.InstallLog.writeToFile("[setupPHPSymlink] PHP symlink updated to PHP 8.3 successfully.")
 
         except OSError as msg:
             logging.InstallLog.writeToFile('[ERROR] ' + str(msg) + " [setupPHPSymlink]")
             return 0
+
+    def setup_lsphp_symlink(self):
+        """Create lsphp symlink in fcgi-bin directory with robust error handling"""
+        try:
+            fcgi_bin_dir = "/usr/local/lscp/fcgi-bin"
+            lsphp_target = os.path.join(fcgi_bin_dir, "lsphp")
+
+            # Ensure fcgi-bin directory exists
+            if not os.path.exists(fcgi_bin_dir):
+                os.makedirs(fcgi_bin_dir, exist_ok=True)
+                logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] Created fcgi-bin directory: {fcgi_bin_dir}")
+
+            # Remove existing lsphp file/symlink if it exists
+            if os.path.exists(lsphp_target) or os.path.islink(lsphp_target):
+                os.remove(lsphp_target)
+                logging.InstallLog.writeToFile("[setup_lsphp_symlink] Removed existing lsphp file/symlink")
+
+            # Try to find and use the best available PHP version
+            # Priority: 83, 82, 81, 80, 74, 73, 72 (newest to oldest)
+            php_versions = ['83', '82', '81', '80', '74', '73', '72']
+            lsphp_source = None
+
+            for php_ver in php_versions:
+                candidate_path = f"/usr/local/lsws/lsphp{php_ver}/bin/lsphp"
+                if os.path.exists(candidate_path):
+                    lsphp_source = candidate_path
+                    logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] Found lsphp binary: {candidate_path}")
+                    break
+
+            # If no lsphp binary found, try to find php binary as fallback
+            if not lsphp_source:
+                for php_ver in php_versions:
+                    candidate_path = f"/usr/local/lsws/lsphp{php_ver}/bin/php"
+                    if os.path.exists(candidate_path):
+                        lsphp_source = candidate_path
+                        logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] Using php binary as fallback: {candidate_path}")
+                        break
+
+            # If still no source found, try admin_php as last resort
+            if not lsphp_source:
+                admin_php_path = "/usr/local/lscp/admin/fcgi-bin/admin_php"
+                if os.path.exists(admin_php_path):
+                    lsphp_source = admin_php_path
+                    logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] Using admin_php as fallback: {admin_php_path}")
+
+                admin_php5_path = "/usr/local/lscp/admin/fcgi-bin/admin_php5"
+                if not lsphp_source and os.path.exists(admin_php5_path):
+                    lsphp_source = admin_php5_path
+                    logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] Using admin_php5 as fallback: {admin_php5_path}")
+
+            # Create the symlink/copy
+            if lsphp_source:
+                try:
+                    # Try to create symlink first (preferred)
+                    os.symlink(lsphp_source, lsphp_target)
+                    logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] Created symlink: {lsphp_target} -> {lsphp_source}")
+                except OSError:
+                    # If symlink fails (e.g., cross-filesystem), copy the file
+                    shutil.copy2(lsphp_source, lsphp_target)
+                    logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] Copied file: {lsphp_source} -> {lsphp_target}")
+
+                # Set proper permissions
+                os.chmod(lsphp_target, 0o755)
+                logging.InstallLog.writeToFile("[setup_lsphp_symlink] Set permissions to 755")
+
+                # Verify the file was created successfully
+                if os.path.exists(lsphp_target):
+                    logging.InstallLog.writeToFile("[setup_lsphp_symlink] lsphp symlink creation successful")
+                    return True
+                else:
+                    logging.InstallLog.writeToFile("[setup_lsphp_symlink] ERROR: lsphp file was not created")
+                    return False
+            else:
+                logging.InstallLog.writeToFile("[setup_lsphp_symlink] ERROR: No suitable PHP binary found")
+                return False
+
+        except Exception as e:
+            logging.InstallLog.writeToFile(f"[setup_lsphp_symlink] ERROR: {str(e)}")
+            return False
 
     def setupPHPAndComposer(self):
         try:
@@ -2461,6 +2690,62 @@ vmail
 
         command = f'chmod +x {filePath}'
         preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+    
+    def startDeferredServices(self):
+        """Start services that were deferred during installation (PowerDNS and Pure-FTPd)
+        These services require database tables that are created by Django migrations"""
+        
+        preFlightsChecks.stdOut("Starting deferred services that depend on database tables...")
+        
+        # Start PowerDNS if it was installed
+        if os.path.exists('/home/cyberpanel/powerdns'):
+            preFlightsChecks.stdOut("Starting PowerDNS service...")
+            command = 'systemctl start pdns'
+            result = preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            
+            if result == 1:
+                # Check if service started successfully
+                command = 'systemctl is-active pdns'
+                try:
+                    output = subprocess.check_output(shlex.split(command)).decode("utf-8").strip()
+                    if output == 'active':
+                        preFlightsChecks.stdOut("PowerDNS service started successfully!")
+                    else:
+                        preFlightsChecks.stdOut("[WARNING] PowerDNS service may not have started properly. Status: " + output)
+                except:
+                    preFlightsChecks.stdOut("[WARNING] Could not verify PowerDNS service status")
+        
+        # Start Pure-FTPd if it was installed
+        if os.path.exists('/home/cyberpanel/pureftpd'):
+            # Configure Pure-FTPd for Ubuntu 24.04 (SHA512 password hashing compatibility)
+            if self.distro == ubuntu:
+                import install_utils
+                try:
+                    release = install_utils.get_Ubuntu_release(use_print=False, exit_on_error=False)
+                    if release and release >= 24.04:
+                        preFlightsChecks.stdOut("Configuring Pure-FTPd for Ubuntu 24.04...")
+                        # Change MYSQLCrypt from md5 to crypt for SHA512 compatibility
+                        command = "sed -i 's/MYSQLCrypt md5/MYSQLCrypt crypt/g' /etc/pure-ftpd/db/mysql.conf"
+                        preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                except:
+                    pass  # If version detection fails, continue without configuration change
+
+            preFlightsChecks.stdOut("Starting Pure-FTPd service...")
+            ftpService = self.pureFTPDServiceName(self.distro)
+            command = f'systemctl start {ftpService}'
+            result = preFlightsChecks.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            
+            if result == 1:
+                # Check if service started successfully
+                command = f'systemctl is-active {ftpService}'
+                try:
+                    output = subprocess.check_output(shlex.split(command)).decode("utf-8").strip()
+                    if output == 'active':
+                        preFlightsChecks.stdOut("Pure-FTPd service started successfully!")
+                    else:
+                        preFlightsChecks.stdOut("[WARNING] Pure-FTPd service may not have started properly. Status: " + output)
+                except:
+                    preFlightsChecks.stdOut("[WARNING] Could not verify Pure-FTPd service status")
 
 def configure_jwt_secret():
     try:
@@ -2684,10 +2969,22 @@ echo $oConfig->Save() ? 'Done' : 'Error';
         writeToFile.write(content)
         writeToFile.close()
 
-        command = '/usr/local/lsws/lsphp72/bin/php /usr/local/CyberCP/public/snappymail.php'
+        command = '/usr/local/lsws/lsphp83/bin/php /usr/local/CyberCP/public/snappymail.php'
         subprocess.call(shlex.split(command))
 
         command = "chown -R lscpd:lscpd /usr/local/lscp/cyberpanel/snappymail/data"
+        subprocess.call(shlex.split(command))
+
+        # Ensure all data directories have group write permissions
+        command = "chmod -R 775 /usr/local/lscp/cyberpanel/snappymail/data"
+        subprocess.call(shlex.split(command))
+
+        # Ensure web server users are in the lscpd group
+        command = "usermod -a -G lscpd nobody 2>/dev/null || true"
+        subprocess.call(shlex.split(command))
+
+        # Fix SnappyMail public directory ownership (critical fix)
+        command = "chown -R lscpd:lscpd /usr/local/CyberCP/public/snappymail/data 2>/dev/null || true"
         subprocess.call(shlex.split(command))
     except:
         pass
@@ -2695,7 +2992,9 @@ echo $oConfig->Save() ? 'Done' : 'Error';
     checks.fixCyberPanelPermissions()
     configure_jwt_secret()
 
-    # 
+    # Start services that were enabled but not started during installation
+    # These services require database tables that are created by Django migrations
+    checks.startDeferredServices()
 
     logging.InstallLog.writeToFile("CyberPanel installation successfully completed!,80")
 

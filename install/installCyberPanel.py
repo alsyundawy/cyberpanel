@@ -9,6 +9,8 @@ import install
 from os.path import exists
 import time
 import install_utils
+import urllib.request
+import re
 
 # distros - using from install_utils
 centos = install_utils.centos
@@ -21,12 +23,83 @@ def get_Ubuntu_release():
     return install_utils.get_Ubuntu_release(use_print=True, exit_on_error=True)
 
 
+def get_Ubuntu_code_name():
+    """Get Ubuntu codename based on version"""
+    release = get_Ubuntu_release()
+    if release >= 24.04:
+        return "noble"
+    elif release >= 22.04:
+        return "jammy"
+    elif release >= 20.04:
+        return "focal"
+    elif release >= 18.04:
+        return "bionic"
+    else:
+        return "xenial"
+
+
 # Using shared function from install_utils
 FetchCloudLinuxAlmaVersionVersion = install_utils.FetchCloudLinuxAlmaVersionVersion
 
 class InstallCyberPanel:
     mysql_Root_password = ""
     mysqlPassword = ""
+    
+    def is_almalinux9(self):
+        """Check if running on AlmaLinux 9"""
+        if os.path.exists('/etc/almalinux-release'):
+            try:
+                with open('/etc/almalinux-release', 'r') as f:
+                    content = f.read()
+                    return 'release 9' in content
+            except:
+                return False
+        return False
+    
+    def fix_almalinux9_mariadb(self):
+        """Fix AlmaLinux 9 MariaDB installation issues"""
+        if not self.is_almalinux9():
+            return
+        
+        self.stdOut("Applying AlmaLinux 9 MariaDB fixes...", 1)
+        
+        try:
+            # Disable problematic MariaDB MaxScale repository
+            self.stdOut("Disabling problematic MariaDB MaxScale repository...", 1)
+            command = "dnf config-manager --disable mariadb-maxscale 2>/dev/null || true"
+            install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            
+            # Remove problematic repository files
+            self.stdOut("Removing problematic repository files...", 1)
+            problematic_repos = [
+                '/etc/yum.repos.d/mariadb-maxscale.repo',
+                '/etc/yum.repos.d/mariadb-maxscale.repo.rpmnew'
+            ]
+            for repo_file in problematic_repos:
+                if os.path.exists(repo_file):
+                    os.remove(repo_file)
+                    self.stdOut(f"Removed {repo_file}", 1)
+            
+            # Clean DNF cache
+            self.stdOut("Cleaning DNF cache...", 1)
+            command = "dnf clean all"
+            install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            
+            # Install MariaDB from official repository
+            self.stdOut("Setting up official MariaDB repository...", 1)
+            command = "curl -sS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | bash -s -- --mariadb-server-version='10.11'"
+            install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            
+            # Install MariaDB packages
+            self.stdOut("Installing MariaDB packages...", 1)
+            mariadb_packages = "MariaDB-server MariaDB-client MariaDB-backup MariaDB-devel"
+            command = f"dnf install -y {mariadb_packages}"
+            install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            
+            self.stdOut("AlmaLinux 9 MariaDB fixes completed", 1)
+            
+        except Exception as e:
+            self.stdOut(f"Error applying AlmaLinux 9 MariaDB fixes: {str(e)}", 0)
     CloudLinux8 = 0
 
     def install_package(self, package_name, options=""):
@@ -49,8 +122,20 @@ class InstallCyberPanel:
         }
         
         actual_service = service_map.get(service_name, service_name)
-        command = f'systemctl {action} {actual_service}'
-        return install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
+        
+        # For AlmaLinux 9, try both mariadb and mysqld services
+        if service_name == 'mariadb' and (self.distro == cent8 or self.distro == openeuler):
+            # Try mariadb first, then mysqld if mariadb fails
+            command = f'systemctl {action} {actual_service}'
+            result = install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+            if result != 0:
+                # If mariadb service fails, try mysqld
+                command = f'systemctl {action} mysqld'
+                return install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
+            return result
+        else:
+            command = f'systemctl {action} {actual_service}'
+            return install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
     def modify_file_content(self, file_path, replacements):
         """Generic file content modification"""
@@ -81,28 +166,30 @@ class InstallCyberPanel:
             # Default mode 'One' uses directories with -one suffix
             source_path = f"{source_dir}-one"
         
+        # Ensure we're working with absolute paths
+        if not os.path.isabs(source_path):
+            source_path = os.path.join(self.cwd, source_path)
+        
         # Determine the actual file to copy
         if os.path.isdir(source_path):
-            # If it's a directory, we need to copy the whole directory
-            if os.path.exists(dest_path):
-                if os.path.isdir(dest_path):
-                    shutil.rmtree(dest_path)
-            shutil.copytree(source_path, dest_path)
-        else:
-            # If source is a directory but dest is a file, find the config file
-            if os.path.isdir(source_dir) or os.path.isdir(f"{source_dir}-one"):
-                # Look for pdns.conf or similar config file
-                if dest_path.endswith('pdns.conf'):
-                    source_file = os.path.join(source_path, 'pdns.conf')
-                elif dest_path.endswith('pureftpd-mysql.conf'):
-                    source_file = os.path.join(source_path, 'pureftpd-mysql.conf')
+            # If dest_path is a file (like pdns.conf), copy the specific file
+            if dest_path.endswith('.conf'):
+                # Look for the specific config file
+                source_file = os.path.join(source_path, os.path.basename(dest_path))
+                if os.path.exists(source_file):
+                    if os.path.exists(dest_path):
+                        os.remove(dest_path)
+                    shutil.copy(source_file, dest_path)
                 else:
-                    # Generic case - use basename of dest
-                    source_file = os.path.join(source_path, os.path.basename(dest_path))
-                
+                    raise IOError(f"Source file {source_file} not found")
+            else:
+                # If it's a directory, copy the whole directory
                 if os.path.exists(dest_path):
-                    os.remove(dest_path)
-                shutil.copy(source_file, dest_path)
+                    if os.path.isdir(dest_path):
+                        shutil.rmtree(dest_path)
+                shutil.copytree(source_path, dest_path)
+        else:
+            raise IOError(f"Source path {source_path} not found")
 
     @staticmethod
     def ISARM():
@@ -155,6 +242,34 @@ class InstallCyberPanel:
     def stdOut(message, log=0, exit=0, code=os.EX_OK):
         install_utils.stdOut(message, log, exit, code)
 
+    @staticmethod
+    def getLatestLSWSVersion():
+        """Fetch the latest LSWS Enterprise version from LiteSpeed's website"""
+        try:
+            # Try to fetch from the download page
+            url = "https://www.litespeedtech.com/products/litespeed-web-server/download"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                html = response.read().decode('utf-8')
+
+            # Look for the latest version pattern: lsws-X.Y.Z-ent
+            version_pattern = r'lsws-(\d+\.\d+\.\d+)-ent'
+            versions = re.findall(version_pattern, html)
+
+            if versions:
+                # Get the latest version
+                latest_version = sorted(versions, key=lambda v: [int(x) for x in v.split('.')])[-1]
+                InstallCyberPanel.stdOut(f"Found latest LSWS Enterprise version: {latest_version}", 1)
+                return latest_version
+            else:
+                InstallCyberPanel.stdOut("Could not find version pattern in HTML, using fallback", 1)
+
+        except Exception as e:
+            InstallCyberPanel.stdOut(f"Failed to fetch latest LSWS version: {str(e)}, using fallback", 1)
+
+        # Fallback to known latest version
+        return "6.3.4"
+
     def installLiteSpeed(self):
         if self.ent == 0:
             self.install_package('openlitespeed')
@@ -173,34 +288,37 @@ class InstallCyberPanel:
                 except:
                     pass
 
+                # Get the latest LSWS Enterprise version dynamically
+                lsws_version = InstallCyberPanel.getLatestLSWSVersion()
+
                 if InstallCyberPanel.ISARM():
-                    command = 'wget https://www.litespeedtech.com/packages/6.0/lsws-6.2-ent-aarch64-linux.tar.gz'
+                    command = f'wget https://www.litespeedtech.com/packages/6.0/lsws-{lsws_version}-ent-aarch64-linux.tar.gz'
                 else:
-                    command = 'wget https://www.litespeedtech.com/packages/6.0/lsws-6.2-ent-x86_64-linux.tar.gz'
+                    command = f'wget https://www.litespeedtech.com/packages/6.0/lsws-{lsws_version}-ent-x86_64-linux.tar.gz'
 
                 install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
                 if InstallCyberPanel.ISARM():
-                    command = 'tar zxf lsws-6.2-ent-aarch64-linux.tar.gz'
+                    command = f'tar zxf lsws-{lsws_version}-ent-aarch64-linux.tar.gz'
                 else:
-                    command = 'tar zxf lsws-6.2-ent-x86_64-linux.tar.gz'
+                    command = f'tar zxf lsws-{lsws_version}-ent-x86_64-linux.tar.gz'
 
                 install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
                 if str.lower(self.serial) == 'trial':
-                    command = 'wget -q --output-document=lsws-6.2/trial.key http://license.litespeedtech.com/reseller/trial.key'
+                    command = f'wget -q --output-document=lsws-{lsws_version}/trial.key http://license.litespeedtech.com/reseller/trial.key'
                 if self.serial == '1111-2222-3333-4444':
-                    command = 'wget -q --output-document=/root/cyberpanel/install/lsws-6.2/trial.key http://license.litespeedtech.com/reseller/trial.key'
+                    command = f'wget -q --output-document=/root/cyberpanel/install/lsws-{lsws_version}/trial.key http://license.litespeedtech.com/reseller/trial.key'
                     install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
                 else:
-                    writeSerial = open('lsws-6.2/serial.no', 'w')
+                    writeSerial = open(f'lsws-{lsws_version}/serial.no', 'w')
                     writeSerial.writelines(self.serial)
                     writeSerial.close()
 
-                shutil.copy('litespeed/install.sh', 'lsws-6.2/')
-                shutil.copy('litespeed/functions.sh', 'lsws-6.2/')
+                shutil.copy('litespeed/install.sh', f'lsws-{lsws_version}/')
+                shutil.copy('litespeed/functions.sh', f'lsws-{lsws_version}/')
 
-                os.chdir('lsws-6.2')
+                os.chdir(f'lsws-{lsws_version}')
 
                 command = 'chmod +x install.sh'
                 install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
@@ -273,7 +391,7 @@ class InstallCyberPanel:
         return self.reStartLiteSpeed()
 
     def installAllPHPVersions(self):
-        php_versions = ['71', '72', '73', '74', '80', '81', '82', '83']
+        php_versions = ['71', '72', '73', '74', '80', '81', '82', '83', '84', '85']
         
         if self.distro == ubuntu:
             # Install base PHP 7.x packages
@@ -318,6 +436,29 @@ class InstallCyberPanel:
         if self.distro != ubuntu:
             InstallCyberPanel.stdOut("LiteSpeed PHPs successfully installed!", 1)
 
+    def installSieve(self):
+        """Install Sieve (Dovecot Sieve) for email filtering on all OS variants"""
+        try:
+            InstallCyberPanel.stdOut("Installing Sieve (Dovecot Sieve) for email filtering...", 1)
+            
+            if self.distro == ubuntu:
+                # Install dovecot-sieve and dovecot-managesieved
+                self.install_package('dovecot-sieve dovecot-managesieved')
+            else:
+                # For CentOS/AlmaLinux/OpenEuler
+                self.install_package('dovecot-pigeonhole')
+            
+            # Add Sieve port 4190 to firewall
+            from plogical.firewallUtilities import FirewallUtilities
+            FirewallUtilities.addSieveFirewallRule()
+            
+            InstallCyberPanel.stdOut("Sieve successfully installed and configured!", 1)
+            return 1
+            
+        except BaseException as msg:
+            logging.InstallLog.writeToFile('[ERROR] ' + str(msg) + " [installSieve]")
+            return 0
+
     def installMySQL(self, mysql):
 
         ############## Install mariadb ######################
@@ -353,17 +494,32 @@ Signed-By: /etc/apt/keyrings/mariadb-keyring.pgp
                 # If the download fails, use manual repo configuration as fallback
                 if result != 1:
                     install_utils.writeToFile("MariaDB repo setup script failed, using manual configuration...")
-                    RepoPath = '/etc/apt/sources.list.d/mariadb.list'
-                    RepoContent = f"""# MariaDB 10.11 repository list - manual fallback
-deb [arch=amd64,arm64,ppc64el,s390x signed-by=/usr/share/keyrings/mariadb-keyring.pgp] https://mirror.mariadb.org/repo/10.11/ubuntu {get_Ubuntu_code_name()} main
-"""
-                    # Download and add MariaDB signing key
-                    command = 'mkdir -p /usr/share/keyrings && curl -fsSL https://mariadb.org/mariadb_release_signing_key.pgp | gpg --dearmor -o /usr/share/keyrings/mariadb-keyring.pgp'
+                    
+                    # First, ensure directories exist
+                    command = 'mkdir -p /usr/share/keyrings /etc/apt/sources.list.d'
                     install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+                    
+                    # Download and add MariaDB signing key
+                    command = 'curl -fsSL https://mariadb.org/mariadb_release_signing_key.pgp | gpg --dearmor -o /usr/share/keyrings/mariadb-keyring.pgp'
+                    install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+                    
+                    # Use multiple mirror options for better reliability
+                    RepoPath = '/etc/apt/sources.list.d/mariadb.list'
+                    codename = get_Ubuntu_code_name()
+                    RepoContent = f"""# MariaDB 10.11 repository list - manual fallback
+# Primary mirror
+deb [arch=amd64,arm64,ppc64el,s390x signed-by=/usr/share/keyrings/mariadb-keyring.pgp] https://mirror.mariadb.org/repo/10.11/ubuntu {codename} main
+
+# Alternative mirrors (uncomment if primary fails)
+# deb [arch=amd64,arm64,ppc64el,s390x signed-by=/usr/share/keyrings/mariadb-keyring.pgp] https://mirrors.gigenet.com/mariadb/repo/10.11/ubuntu {codename} main
+# deb [arch=amd64,arm64,ppc64el,s390x signed-by=/usr/share/keyrings/mariadb-keyring.pgp] https://ftp.osuosl.org/pub/mariadb/repo/10.11/ubuntu {codename} main
+"""
                     
                     WriteToFile = open(RepoPath, 'w')
                     WriteToFile.write(RepoContent)
                     WriteToFile.close()
+                    
+                    install_utils.writeToFile("Manual MariaDB repository configuration completed.")
 
 
 
@@ -422,6 +578,13 @@ gpgcheck=1
                 command = 'sudo dnf module reset mariadb -y'
                 install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
+                # Disable problematic mariadb-maxscale repository to avoid 404 errors
+                command = 'dnf config-manager --disable mariadb-maxscale'
+                install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
+
+                # Clear dnf cache to avoid repository issues
+                command = 'dnf clean all'
+                install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
 
                 command = 'dnf install MariaDB-server MariaDB-client MariaDB-backup -y'
 
@@ -440,14 +603,28 @@ gpgcheck=1
                 passwordCMD = "use mysql;DROP DATABASE IF EXISTS test;DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%%';GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' IDENTIFIED BY '%s';flush privileges;" % (
                     InstallCyberPanel.mysql_Root_password)
 
-            command = 'mariadb -u root -e "' + passwordCMD + '"'
-
-            install_utils.call(command, self.distro, command, command, 0, 0, os.EX_OSERR)
+            # For AlmaLinux 9, try mysql command first, then mariadb
+            if self.distro == cent8 or self.distro == openeuler:
+                command = 'mysql -u root -e "' + passwordCMD + '"'
+                result = install_utils.call(command, self.distro, command, command, 0, 0, os.EX_OSERR)
+                if result != 0:
+                    # If mysql command fails, try mariadb
+                    command = 'mariadb -u root -e "' + passwordCMD + '"'
+                    install_utils.call(command, self.distro, command, command, 0, 0, os.EX_OSERR)
+            else:
+                command = 'mariadb -u root -e "' + passwordCMD + '"'
+                install_utils.call(command, self.distro, command, command, 0, 0, os.EX_OSERR)
 
     def startMariaDB(self):
 
         if self.remotemysql == 'OFF':
             ############## Start mariadb ######################
+            
+            # Check if AlmaLinux 9 and apply fixes
+            if self.is_almalinux9():
+                self.stdOut("AlmaLinux 9 detected - applying MariaDB fixes", 1)
+                self.fix_almalinux9_mariadb()
+            
             self.manage_service('mariadb', 'start')
 
             ############## Enable mariadb at system startup ######################
@@ -484,7 +661,14 @@ gpgcheck=1
         except IOError as err:
             self.stdOut("[ERROR] Error in setting: " + fileName + ": " + str(err), 1, 1, os.EX_OSERR)
 
-        os.system('systemctl restart mariadb')
+        # Use the manage_service method for consistent service management
+        if self.distro == cent8 or self.distro == openeuler:
+            # Try mariadb first, then mysqld
+            result = os.system('systemctl restart mariadb')
+            if result != 0:
+                os.system('systemctl restart mysqld')
+        else:
+            os.system('systemctl restart mariadb')
 
         self.stdOut("MariaDB is now setup so it can support Cyberpanel's needs")
 
@@ -521,7 +705,13 @@ gpgcheck=1
 
     def startPureFTPD(self):
         ############## Start pureftpd ######################
-        self.manage_service('pureftpd', 'start')
+        serviceName = install.preFlightsChecks.pureFTPDServiceName(self.distro)
+        
+        # During fresh installation, don't start Pure-FTPd yet
+        # It will be started after Django migrations create the required tables
+        InstallCyberPanel.stdOut("Pure-FTPd enabled for startup.", 1)
+        InstallCyberPanel.stdOut("Note: Pure-FTPd will start after database setup is complete.", 1)
+        logging.InstallLog.writeToFile("Pure-FTPd enabled but not started - waiting for Django migrations")
 
     def installPureFTPDConfigurations(self, mysql):
         try:
@@ -530,9 +720,12 @@ gpgcheck=1
             InstallCyberPanel.stdOut("Configuring PureFTPD..", 1)
 
             try:
-                os.mkdir("/etc/ssl/private")
-            except:
-                logging.InstallLog.writeToFile("[ERROR] Could not create directory for FTP SSL")
+                if not os.path.exists("/etc/ssl/private"):
+                    os.makedirs("/etc/ssl/private", mode=0o755)
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    logging.InstallLog.writeToFile("[ERROR] Could not create directory for FTP SSL: " + str(e))
+                    raise
 
             if (self.distro == centos or self.distro == cent8 or self.distro == openeuler) or (
                     self.distro == ubuntu and get_Ubuntu_release() == 18.14):
@@ -669,7 +862,17 @@ gpgcheck=1
 
             # Install PowerDNS packages
             if self.distro == ubuntu:
-                self.install_package('pdns-server pdns-backend-mysql')
+                # Update package list first
+                command = "DEBIAN_FRONTEND=noninteractive apt-get update"
+                install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+                
+                # Install PowerDNS packages
+                command = "DEBIAN_FRONTEND=noninteractive apt-get -y install pdns-server pdns-backend-mysql"
+                install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR, True)
+                
+                # Ensure service is stopped after installation for configuration
+                command = 'systemctl stop pdns || true'
+                install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR, True)
                 return 1
             else:
                 self.install_package('pdns pdns-backend-mysql')
@@ -687,9 +890,75 @@ gpgcheck=1
                 dnsPath = "/etc/pdns/pdns.conf"
             else:
                 dnsPath = "/etc/powerdns/pdns.conf"
+                # Ensure directory exists for Ubuntu
+                dnsDir = os.path.dirname(dnsPath)
+                if not os.path.exists(dnsDir):
+                    try:
+                        os.makedirs(dnsDir, mode=0o755)
+                    except OSError as e:
+                        if e.errno != errno.EEXIST:
+                            raise
 
-            self.copy_config_file("dns", dnsPath, mysql)
+            try:
+                self.copy_config_file("dns", dnsPath, mysql)
+            except Exception as e:
+                InstallCyberPanel.stdOut("[ERROR] Failed to copy PowerDNS config: " + str(e), 1)
+                logging.InstallLog.writeToFile('[ERROR] Failed to copy PowerDNS config: ' + str(e))
+                raise
 
+            # Verify the file was copied and has content
+            if not os.path.exists(dnsPath):
+                raise IOError(f"PowerDNS config file not found at {dnsPath} after copy")
+            
+            # Check if file has content
+            with open(dnsPath, "r") as f:
+                content = f.read()
+                if not content or "launch=gmysql" not in content:
+                    InstallCyberPanel.stdOut("[WARNING] PowerDNS config appears empty or incomplete, attempting to fix...", 1)
+                    
+                    # First try to re-copy
+                    try:
+                        if os.path.exists(dnsPath):
+                            os.remove(dnsPath)
+                        source_file = os.path.join(self.cwd, "dns-one", "pdns.conf")
+                        shutil.copy2(source_file, dnsPath)
+                    except Exception as copy_error:
+                        InstallCyberPanel.stdOut("[WARNING] Failed to re-copy config: " + str(copy_error), 1)
+                        
+                        # Fallback: directly write the essential MySQL configuration
+                        InstallCyberPanel.stdOut("[INFO] Directly writing MySQL backend configuration...", 1)
+                        try:
+                            mysql_config = f"""# PowerDNS MySQL Backend Configuration
+launch=gmysql
+gmysql-host=localhost
+gmysql-port=3306
+gmysql-user=cyberpanel
+gmysql-password={mysqlPassword}
+gmysql-dbname=cyberpanel
+
+# Basic PowerDNS settings
+daemon=no
+guardian=no
+setgid=pdns
+setuid=pdns
+"""
+                            # If file exists and has some content, append our config
+                            if os.path.exists(dnsPath) and content.strip():
+                                # Check if it's just missing the MySQL part
+                                with open(dnsPath, "a") as f:
+                                    f.write("\n\n" + mysql_config)
+                            else:
+                                # Write a complete minimal config
+                                with open(dnsPath, "w") as f:
+                                    f.write(mysql_config)
+                            
+                            InstallCyberPanel.stdOut("[SUCCESS] MySQL backend configuration written directly", 1)
+                        except Exception as write_error:
+                            InstallCyberPanel.stdOut("[ERROR] Failed to write MySQL config: " + str(write_error), 1)
+                            raise
+            
+            InstallCyberPanel.stdOut("PowerDNS config file prepared at: " + dnsPath, 1)
+            
             data = open(dnsPath, "r").readlines()
 
             writeDataToFile = open(dnsPath, "w")
@@ -714,6 +983,18 @@ gpgcheck=1
                 command = "sed -i 's|gmysql-port=3306|gmysql-port=%s|g' %s" % (self.mysqlport, dnsPath)
                 install_utils.call(command, self.distro, command, command, 1, 1, os.EX_OSERR)
 
+            # Set proper permissions for PowerDNS config
+            if self.distro == ubuntu:
+                # Ensure pdns user/group exists
+                command = 'id -u pdns &>/dev/null || useradd -r -s /usr/sbin/nologin pdns'
+                install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                
+                command = 'chown root:pdns %s' % dnsPath
+                install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+                
+                command = 'chmod 640 %s' % dnsPath
+                install_utils.call(command, self.distro, command, command, 1, 0, os.EX_OSERR)
+
             InstallCyberPanel.stdOut("PowerDNS configured!", 1)
 
         except IOError as msg:
@@ -726,7 +1007,15 @@ gpgcheck=1
         ############## Start PowerDNS ######################
 
         self.manage_service('pdns', 'enable')
-        self.manage_service('pdns', 'start')
+        
+        # During fresh installation, don't start PowerDNS yet
+        # It will be started after Django migrations create the required tables
+        InstallCyberPanel.stdOut("PowerDNS enabled for startup.", 1)
+        InstallCyberPanel.stdOut("Note: PowerDNS will start after database setup is complete.", 1)
+        logging.InstallLog.writeToFile("PowerDNS enabled but not started - waiting for Django migrations")
+        
+        # The service will be started later after migrations run
+        # or manually by the admin after installation completes
 
 
 def Main(cwd, mysql, distro, ent, serial=None, port="8090", ftp=None, dns=None, publicip=None, remotemysql=None,
@@ -785,6 +1074,9 @@ def Main(cwd, mysql, distro, ent, serial=None, port="8090", ftp=None, dns=None, 
     installer.installAllPHPVersions()
     if ent == 0:
         installer.fix_ols_configs()
+
+    logging.InstallLog.writeToFile('Installing Sieve for email filtering..,55')
+    installer.installSieve()
 
     logging.InstallLog.writeToFile('Installing MySQL,60')
     installer.installMySQL(mysql)

@@ -23,7 +23,7 @@
         .page-title {
             font-size: 2.5rem;
             font-weight: 700;
-            color: #1e293b;
+            color: var(--text-primary, #1e293b);
             margin-bottom: 0.5rem;
             display: flex;
             align-items: center;
@@ -33,7 +33,7 @@
         
         .page-subtitle {
             font-size: 1.125rem;
-            color: #64748b;
+            color: var(--text-secondary, #64748b);
             margin-bottom: 0;
         }
         
@@ -42,8 +42,8 @@
             align-items: center;
             gap: 0.5rem;
             padding: 0.5rem 1rem;
-            background: #fff;
-            border: 1px solid #e8e9ff;
+            background: var(--bg-primary, #fff);
+            border: 1px solid var(--border-primary, #e8e9ff);
             border-radius: 8px;
             color: #5b5fcf;
             text-decoration: none;
@@ -60,24 +60,24 @@
         }
         
         .main-card {
-            background: white;
+            background: var(--bg-primary, white);
             border-radius: 16px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 40px rgba(0,0,0,0.08);
-            border: 1px solid #e8e9ff;
+            box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05)), var(--shadow-lg, 0 10px 40px rgba(0,0,0,0.08));
+            border: 1px solid var(--border-primary, #e8e9ff);
             overflow: hidden;
             animation: fadeInUp 0.5s ease-out;
         }
         
         .card-header {
-            background: linear-gradient(135deg, #f8f9ff 0%, #f0f1ff 100%);
+            background: linear-gradient(135deg, var(--bg-secondary, #f8f9ff) 0%, var(--bg-hover, #f0f1ff) 100%);
             padding: 1.5rem 2rem;
-            border-bottom: 1px solid #e8e9ff;
+            border-bottom: 1px solid var(--border-primary, #e8e9ff);
         }
         
         .card-title {
             font-size: 1.25rem;
             font-weight: 600;
-            color: #1e293b;
+            color: var(--text-primary, #1e293b);
             margin: 0;
             display: flex;
             align-items: center;
@@ -100,18 +100,18 @@
             display: block;
             margin-bottom: 0.5rem;
             font-weight: 500;
-            color: #1e293b;
+            color: var(--text-primary, #1e293b);
             font-size: 0.875rem;
         }
         
         .form-control {
             width: 100%;
             padding: 0.75rem 1rem;
-            border: 1px solid #e8e9ff;
+            border: 1px solid var(--border-primary, #e8e9ff);
             border-radius: 8px;
             font-size: 0.875rem;
             transition: all 0.3s ease;
-            background: #fff;
+            background: var(--bg-primary, #fff);
         }
         
         .form-control:focus {
@@ -151,35 +151,35 @@
         }
         
         .alert-success {
-            background: #d1fae5;
-            color: #065f46;
-            border: 1px solid #a7f3d0;
+            background: var(--success-light, #d1fae5);
+            color: var(--success-text, #065f46);
+            border: 1px solid var(--success-border, #a7f3d0);
         }
         
         .alert-danger {
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #fecaca;
+            background: var(--danger-light, #fee2e2);
+            color: var(--danger-text, #991b1b);
+            border: 1px solid var(--danger-border, #fecaca);
         }
         
         .alert-info {
-            background: #dbeafe;
-            color: #1e40af;
-            border: 1px solid #bfdbfe;
+            background: var(--info-light, #dbeafe);
+            color: var(--info-text, #1e40af);
+            border: 1px solid var(--info-border, #bfdbfe);
         }
         
         .loading-spinner {
             width: 20px;
             height: 20px;
-            border: 2px solid #e8e9ff;
+            border: 2px solid var(--border-primary, #e8e9ff);
             border-top-color: #5b5fcf;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
         
         .install-notice {
-            background: #f8f9ff;
-            border: 2px solid #e8e9ff;
+            background: var(--bg-secondary, #f8f9ff);
+            border: 2px solid var(--border-primary, #e8e9ff);
             border-radius: 12px;
             padding: 3rem;
             text-align: center;
@@ -187,7 +187,7 @@
         }
         
         .install-notice h3 {
-            color: #1e293b;
+            color: var(--text-primary, #1e293b);
             margin-bottom: 1.5rem;
             font-size: 1.5rem;
         }
@@ -220,26 +220,26 @@
         
         .keys-table {
             width: 100%;
-            background: white;
+            background: var(--bg-primary, white);
             border-radius: 8px;
             overflow: hidden;
-            border: 1px solid #e8e9ff;
+            border: 1px solid var(--border-primary, #e8e9ff);
             margin-top: 1.5rem;
         }
         
         .keys-table thead {
-            background: #f8f9ff;
+            background: var(--bg-secondary, #f8f9ff);
         }
         
         .keys-table th {
             padding: 1rem;
             text-align: left;
             font-weight: 600;
-            color: #1e293b;
+            color: var(--text-primary, #1e293b);
             font-size: 0.875rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            border-bottom: 1px solid #e8e9ff;
+            border-bottom: 1px solid var(--border-primary, #e8e9ff);
         }
         
         .keys-table td {
@@ -249,8 +249,8 @@
         
         .key-textarea {
             width: 100%;
-            background: #f8f9ff;
-            border: 1px solid #e8e9ff;
+            background: var(--bg-secondary, #f8f9ff);
+            border: 1px solid var(--border-primary, #e8e9ff);
             border-radius: 8px;
             padding: 1rem;
             font-family: monospace;
@@ -262,12 +262,12 @@
         .key-textarea:focus {
             outline: none;
             border-color: #5b5fcf;
-            background: #fff;
+            background: var(--bg-primary, #fff);
         }
         
         .generate-notice {
-            background: #fef3c7;
-            border: 1px solid #fde68a;
+            background: var(--warning-light, #fef3c7);
+            border: 1px solid var(--warning-border, #fde68a);
             border-radius: 12px;
             padding: 2rem;
             text-align: center;
@@ -275,7 +275,7 @@
         }
         
         .generate-notice h3 {
-            color: #92400e;
+            color: var(--warning-text, #92400e);
             margin-bottom: 1rem;
         }
         
@@ -293,18 +293,62 @@
         }
         
         .info-box {
-            background: #e0e7ff;
-            border: 1px solid #c7d2fe;
+            background: var(--accent-light, #e0e7ff);
+            border: 1px solid var(--accent-border, #c7d2fe);
             border-radius: 8px;
             padding: 1rem 1.5rem;
             margin-bottom: 1.5rem;
             font-size: 0.875rem;
-            color: #3730a3;
+            color: var(--info-dark, #3730a3);
         }
         
         .info-box i {
             color: #5b5fcf;
             margin-right: 0.5rem;
+        }
+        
+        .install-icon {
+            color: #5b5fcf;
+        }
+        
+        .progress-title {
+            color: var(--text-primary, #1e293b);
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        
+        .terminal-pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .table-domain {
+            width: 20%;
+        }
+        
+        .table-private-key {
+            width: 40%;
+        }
+        
+        .table-public-key {
+            width: 40%;
+        }
+        
+        .domain-badge {
+            padding: 0.5rem 1rem;
+            background: var(--accent-light, #e0e7ff);
+            color: #5b5fcf;
+            border-radius: 6px;
+            font-weight: 600;
+            display: inline-block;
+        }
+        
+        .key-hint {
+            color: var(--text-secondary, #64748b);
+            margin-top: 0.5rem;
+            display: block;
         }
         
         @keyframes spin {
@@ -359,7 +403,7 @@
             <h1 class="page-title">
                 <i class="fas fa-shield-alt"></i>
                 {% trans "DKIM Manager" %}
-                <a target="_blank" href="http://go.cyberpanel.net/dkim" class="docs-link">
+                <a target="_blank" rel="noopener" href="https://cyberpanel.net/KnowledgeBase/home/dkim-set-up-and-configurations/" class="docs-link">
                     <i class="fas fa-book"></i>
                     {% trans "DKIM Docs" %}
                 </a>
@@ -378,7 +422,7 @@
                 </div>
                 <div class="card-body">
                     <div class="install-notice">
-                        <i class="fas fa-exclamation-circle fa-3x mb-3" style="color: #5b5fcf;"></i>
+                        <i class="fas fa-exclamation-circle fa-3x mb-3 install-icon"></i>
                         <h3>{% trans "OpenDKIM is not installed" %}</h3>
                         <p class="mb-3">{% trans "OpenDKIM is required to manage DKIM keys for your domains" %}</p>
                         <a href="" ng-click="installOpenDKIM()" class="install-link">
@@ -407,12 +451,12 @@
 
                     <!-- Installation Log -->
                     <div ng-hide="openDKIMInstallBox">
-                        <h3 style="color: #1e293b; font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem;">
+                        <h3 class="progress-title">
                             <i class="fas fa-terminal"></i>
                             {% trans "Installation Progress" %}
                         </h3>
                         <div class="terminal-box">
-                            <pre ng-bind="requestData" style="margin: 0; white-space: pre-wrap; word-wrap: break-word;"></pre>
+                            <pre ng-bind="requestData" class="terminal-pre"></pre>
                         </div>
                     </div>
                 </div>
@@ -438,7 +482,7 @@
                                 <div class="col-md-8">
                                     <div class="form-group">
                                         <label class="form-label">{% trans "Select Website" %}</label>
-                                        <select ng-change="fetchKeys()" ng-model="domainName" class="form-control">
+                                        <select ng-change="fetchKeys()" ng-model="domainName" class="form-control" aria-label="{% trans 'Select Website' %}">
                                             <option value="">{% trans "Choose a website..." %}</option>
                                             {% for items in websiteList %}
                                                 <option value="{{ items }}">{{ items }}</option>
@@ -465,29 +509,29 @@
                             <table class="keys-table">
                                 <thead>
                                 <tr>
-                                    <th style="width: 20%;">{% trans "Domain" %}</th>
-                                    <th style="width: 40%;">{% trans "Private Key" %}</th>
-                                    <th style="width: 40%;">{% trans "Public Key" %}</th>
+                                    <th class="table-domain">{% trans "Domain" %}</th>
+                                    <th class="table-private-key">{% trans "Private Key" %}</th>
+                                    <th class="table-public-key">{% trans "Public Key" %}</th>
                                 </tr>
                                 </thead>
                                 <tbody>
                                 <tr>
                                     <td>
-                                        <span style="padding: 0.5rem 1rem; background: #e0e7ff; color: #5b5fcf; border-radius: 6px; font-weight: 600; display: inline-block;">
+                                        <span class="domain-badge">
                                             <i class="fas fa-globe"></i>
                                             <span ng-bind="domainName"></span>
                                         </span>
                                     </td>
                                     <td>
-                                        <textarea ng-bind="privateKey" rows="10" class="key-textarea" readonly></textarea>
-                                        <small style="color: #64748b; margin-top: 0.5rem; display: block;">
+                                        <textarea ng-bind="privateKey" rows="10" class="key-textarea" readonly aria-label="{% trans 'Private Key' %}"></textarea>
+                                        <small class="key-hint">
                                             <i class="fas fa-lock"></i>
                                             {% trans "Keep this private key secure" %}
                                         </small>
                                     </td>
                                     <td>
-                                        <textarea ng-bind="publicKey" rows="10" class="key-textarea" readonly></textarea>
-                                        <small style="color: #64748b; margin-top: 0.5rem; display: block;">
+                                        <textarea ng-bind="publicKey" rows="10" class="key-textarea" readonly aria-label="{% trans 'Public Key' %}"></textarea>
+                                        <small class="key-hint">
                                             <i class="fas fa-info-circle"></i>
                                             {% trans "Add this as a TXT record in your DNS" %}
                                         </small>

@@ -8,6 +8,132 @@
 <!-- Current language: {{ LANGUAGE_CODE }} -->
 
 <style>
+    /* CSS Variables for Dark Mode Support */
+    :root {
+        /* Text colors */
+        --text-primary: #1e293b;
+        --text-secondary: #475569;
+        --text-muted: #64748b;
+        --text-on-gradient: rgba(255, 255, 255, 0.9);
+        
+        /* Background colors */
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9ff;
+        --bg-light: #f3f4f6;
+        --bg-hover: #f8f9ff;
+        --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        
+        /* Border colors */
+        --border-color: #e8e9ff;
+        --border-light: #f1f5f9;
+        
+        /* Accent colors */
+        --accent-color: #667eea;
+        --accent-hover: #764ba2;
+        --accent-bg: #f3e8ff;
+        --accent-focus: rgba(102, 126, 234, 0.1);
+        --accent-shadow: rgba(102, 126, 234, 0.3);
+        
+        /* Status colors */
+        --success-bg: #d1fae5;
+        --success-color: #065f46;
+        --success-border: #a7f3d0;
+        --success-accent: #10b981;
+        --success-hover: #059669;
+        
+        --danger-bg: #fee2e2;
+        --danger-color: #991b1b;
+        --danger-border: #fecaca;
+        --danger-accent: #dc2626;
+        --danger-hover: #b91c1c;
+        
+        --warning-bg: #fef3c7;
+        --warning-color: #92400e;
+        --warning-border: #fde68a;
+        
+        --info-bg: #dbeafe;
+        --info-color: #1e40af;
+        --info-border: #bfdbfe;
+        
+        /* Shadow colors */
+        --shadow-light: rgba(0,0,0,0.05);
+        --shadow-medium: rgba(0,0,0,0.08);
+        --shadow-color: rgba(0,0,0,0.1);
+        
+        /* Console colors */
+        --console-bg: #1e293b;
+        --console-text: #10b981;
+        
+        /* Lock colors */
+        --lock-color: #dc2626;
+        --unlock-color: #10b981;
+        
+        /* Table specific */
+        --table-header-bg: #f8f9ff;
+        --version-badge-bg: #f3f4f6;
+        --package-type-bg: #f3e8ff;
+        --lock-hover-bg: #f3f4f6;
+        --empty-icon-bg: #f3f4f6;
+    }
+    
+    [data-theme="dark"] {
+        /* Dark mode overrides */
+        --text-primary: #e4e4e7;
+        --text-secondary: #9ca3af;
+        --text-muted: #6b7280;
+        --text-on-gradient: rgba(255, 255, 255, 0.9);
+        
+        --bg-primary: #1a1a3e;
+        --bg-secondary: #1e1e42;
+        --bg-light: #252550;
+        --bg-hover: #252550;
+        --bg-gradient: linear-gradient(135deg, #7c7ff3 0%, #9b5de5 100%);
+        
+        --border-color: #2a2a5e;
+        --border-light: #374151;
+        
+        --accent-color: #7c7ff3;
+        --accent-hover: #9b5de5;
+        --accent-bg: #3730a3;
+        --accent-focus: rgba(124, 127, 243, 0.1);
+        --accent-shadow: rgba(124, 127, 243, 0.3);
+        
+        --success-bg: #064e3b;
+        --success-color: #34d399;
+        --success-border: #065f46;
+        --success-accent: #10b981;
+        --success-hover: #15803d;
+        
+        --danger-bg: #7f1d1d;
+        --danger-color: #fca5a5;
+        --danger-border: #991b1b;
+        --danger-accent: #ef4444;
+        --danger-hover: #dc2626;
+        
+        --warning-bg: #78350f;
+        --warning-color: #fbbf24;
+        --warning-border: #92400e;
+        
+        --info-bg: #1e3a8a;
+        --info-color: #93c5fd;
+        --info-border: #1e40af;
+        
+        --shadow-light: rgba(0,0,0,0.3);
+        --shadow-medium: rgba(0,0,0,0.4);
+        --shadow-color: rgba(0,0,0,0.5);
+        
+        --console-bg: #0f0f23;
+        --console-text: #4ade80;
+        
+        --lock-color: #ef4444;
+        --unlock-color: #10b981;
+        
+        --table-header-bg: #252550;
+        --version-badge-bg: #16162e;
+        --package-type-bg: #3730a3;
+        --lock-hover-bg: #252550;
+        --empty-icon-bg: #252550;
+    }
     .modern-container {
         max-width: 1400px;
         margin: 0 auto;
@@ -18,12 +144,12 @@
         text-align: center;
         margin-bottom: 3rem;
         padding: 3rem 0;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: var(--bg-gradient);
         border-radius: 20px;
         animation: fadeInDown 0.5s ease-out;
         position: relative;
         overflow: hidden;
-        color: white;
+        color: var(--bg-primary);
     }
     
     .page-header::before {
@@ -56,6 +182,7 @@
         width: 60px;
         height: 60px;
         background: rgba(255, 255, 255, 0.2);
+        -webkit-backdrop-filter: blur(10px);
         backdrop-filter: blur(10px);
         border-radius: 12px;
         display: flex;
@@ -64,9 +191,17 @@
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     
+    .package-icon i {
+        font-size: 1.75rem;
+    }
+    
+    .loading-spinner-inline {
+        margin-left: 1rem;
+    }
+    
     .page-subtitle {
         font-size: 1.125rem;
-        color: rgba(255, 255, 255, 0.9);
+        color: var(--text-on-gradient);
         max-width: 600px;
         margin: 0 auto;
     }
@@ -81,6 +216,7 @@
     
     .stat-badge {
         background: rgba(255, 255, 255, 0.2);
+        -webkit-backdrop-filter: blur(10px);
         backdrop-filter: blur(10px);
         padding: 0.5rem 1.5rem;
         border-radius: 20px;
@@ -95,18 +231,18 @@
     }
     
     .tabs-container {
-        background: white;
+        background: var(--bg-primary);
         border-radius: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 40px rgba(0,0,0,0.08);
-        border: 1px solid #e8e9ff;
+        box-shadow: 0 1px 3px var(--shadow-light), 0 10px 40px var(--shadow-medium);
+        border: 1px solid var(--border-color);
         overflow: hidden;
         animation: fadeInUp 0.5s ease-out;
     }
     
     .modern-tabs {
         display: flex;
-        background: #f8f9ff;
-        border-bottom: 1px solid #e8e9ff;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border-color);
         overflow-x: auto;
     }
     
@@ -116,7 +252,7 @@
         border: none;
         background: none;
         font-weight: 500;
-        color: #64748b;
+        color: var(--text-muted);
         position: relative;
         white-space: nowrap;
         transition: all 0.3s ease;
@@ -126,13 +262,13 @@
     }
     
     .tab-item:hover {
-        color: #667eea;
+        color: var(--accent-color);
         background: rgba(102, 126, 234, 0.05);
     }
     
     .tab-item.active {
-        color: #667eea;
-        background: white;
+        color: var(--accent-color);
+        background: var(--bg-primary);
     }
     
     .tab-item.active::after {
@@ -142,7 +278,7 @@
         left: 0;
         right: 0;
         height: 3px;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        background: var(--bg-gradient);
     }
     
     .tab-icon {
@@ -171,16 +307,18 @@
     .search-input {
         width: 100%;
         padding: 0.75rem 1rem 0.75rem 2.5rem;
-        border: 1px solid #e8e9ff;
+        border: 1px solid var(--border-color);
         border-radius: 8px;
         font-size: 0.875rem;
         transition: all 0.3s ease;
+        background: var(--bg-primary);
+        color: var(--text-primary);
     }
     
     .search-input:focus {
         outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 3px var(--accent-focus);
     }
     
     .search-icon {
@@ -188,7 +326,7 @@
         left: 0.75rem;
         top: 50%;
         transform: translateY(-50%);
-        color: #94a3b8;
+        color: var(--text-muted);
     }
     
     .control-group {
@@ -199,10 +337,11 @@
     
     .select-control {
         padding: 0.75rem 2.5rem 0.75rem 1rem;
-        border: 1px solid #e8e9ff;
+        border: 1px solid var(--border-color);
         border-radius: 8px;
         font-size: 0.875rem;
-        background: white;
+        background: var(--bg-primary);
+        color: var(--text-primary);
         appearance: none;
         background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
         background-position: right 0.5rem center;
@@ -225,57 +364,57 @@
     }
     
     .btn-primary {
-        background: #667eea;
+        background: var(--accent-color);
         color: white;
     }
     
     .btn-primary:hover {
-        background: #764ba2;
+        background: var(--accent-hover);
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 4px 12px var(--accent-shadow);
     }
     
     .btn-success {
-        background: #10b981;
+        background: var(--success-accent);
         color: white;
     }
     
     .btn-success:hover {
-        background: #059669;
+        background: var(--success-hover);
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
     }
     
     .btn-info {
-        background: #3b82f6;
+        background: var(--info-color);
         color: white;
     }
     
     .btn-info:hover {
         background: #2563eb;
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        box-shadow: 0 4px 12px var(--accent-shadow);
     }
     
     .btn-secondary {
-        background: white;
-        color: #64748b;
-        border: 1px solid #e8e9ff;
+        background: var(--bg-primary);
+        color: var(--text-muted);
+        border: 1px solid var(--border-color);
     }
     
     .btn-secondary:hover {
-        background: #f8f9ff;
-        border-color: #cbd5e1;
+        background: var(--bg-secondary);
+        border-color: var(--border-color);
     }
     
     .package-table {
         width: 100%;
         border-collapse: collapse;
-        background: white;
+        background: var(--bg-primary);
     }
     
     .package-table thead {
-        background: #f8f9ff;
+        background: var(--table-header-bg);
         position: sticky;
         top: 0;
         z-index: 10;
@@ -285,18 +424,18 @@
         padding: 1rem;
         text-align: left;
         font-weight: 600;
-        color: #475569;
+        color: var(--text-secondary);
         font-size: 0.875rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        border-bottom: 2px solid #e8e9ff;
+        border-bottom: 2px solid var(--border-color);
     }
     
     .package-table td {
         padding: 1rem;
         font-size: 0.875rem;
-        color: #1e293b;
-        border-bottom: 1px solid #f1f5f9;
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--border-light);
     }
     
     .package-table tbody tr {
@@ -304,12 +443,12 @@
     }
     
     .package-table tbody tr:hover {
-        background: #f8f9ff;
+        background: var(--bg-secondary);
     }
     
     .package-name {
         font-weight: 600;
-        color: #1e293b;
+        color: var(--text-primary);
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -319,23 +458,24 @@
         font-size: 0.625rem;
         padding: 0.125rem 0.5rem;
         border-radius: 4px;
-        background: #f3e8ff;
-        color: #667eea;
+        background: var(--package-type-bg);
+        color: var(--accent-color);
         font-weight: 500;
     }
     
     .version-badge {
         font-family: 'Monaco', 'Consolas', monospace;
         font-size: 0.875rem;
-        background: #f3f4f6;
+        background: var(--version-badge-bg);
         padding: 0.25rem 0.75rem;
         border-radius: 6px;
         display: inline-block;
+        color: var(--text-primary);
     }
     
     .upgrade-badge {
-        background: #d1fae5;
-        color: #065f46;
+        background: var(--success-bg);
+        color: var(--success-color);
         padding: 0.25rem 0.75rem;
         border-radius: 6px;
         font-size: 0.75rem;
@@ -358,15 +498,15 @@
     }
     
     .lock-toggle:hover {
-        background: #f3f4f6;
+        background: var(--lock-hover-bg);
     }
     
     .lock-toggle.locked {
-        color: #dc2626;
+        color: var(--lock-color);
     }
     
     .lock-toggle.unlocked {
-        color: #10b981;
+        color: var(--unlock-color);
     }
     
     .action-buttons {
@@ -382,8 +522,8 @@
     .loading-spinner {
         width: 20px;
         height: 20px;
-        border: 2px solid #f3f3f3;
-        border-top: 2px solid #667eea;
+        border: 2px solid var(--border-color);
+        border-top: 2px solid var(--accent-color);
         border-radius: 50%;
         animation: spin 1s linear infinite;
         display: inline-block;
@@ -395,12 +535,12 @@
         align-items: center;
         margin-top: 2rem;
         padding-top: 2rem;
-        border-top: 1px solid #e8e9ff;
+        border-top: 1px solid var(--border-color);
     }
     
     .pagination-info {
         font-size: 0.875rem;
-        color: #64748b;
+        color: var(--text-muted);
     }
     
     .pagination-controls {
@@ -411,9 +551,11 @@
     
     .page-select {
         padding: 0.5rem 1rem;
-        border: 1px solid #e8e9ff;
+        border: 1px solid var(--border-color);
         border-radius: 6px;
         font-size: 0.875rem;
+        background: var(--bg-primary);
+        color: var(--text-primary);
     }
     
     /* Modal Styles */
@@ -428,11 +570,12 @@
         align-items: center;
         justify-content: center;
         z-index: 1000;
+        -webkit-backdrop-filter: blur(4px);
         backdrop-filter: blur(4px);
     }
     
     .modal-content {
-        background: white;
+        background: var(--bg-primary);
         border-radius: 16px;
         max-width: 800px;
         width: 90%;
@@ -443,8 +586,8 @@
     }
     
     .modal-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background: var(--bg-gradient);
+        color: var(--bg-primary);
         padding: 1.5rem 2rem;
         display: flex;
         align-items: center;
@@ -486,8 +629,8 @@
     }
     
     .console-output {
-        background: #1e293b;
-        color: #10b981;
+        background: var(--console-bg);
+        color: var(--console-text);
         font-family: 'Monaco', 'Consolas', monospace;
         font-size: 0.875rem;
         padding: 1.5rem;
@@ -499,8 +642,8 @@
     }
     
     .detail-output {
-        background: #f8f9ff;
-        border: 1px solid #e8e9ff;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
         border-radius: 8px;
         padding: 1.5rem;
         font-family: 'Monaco', 'Consolas', monospace;
@@ -513,20 +656,20 @@
     .empty-state {
         text-align: center;
         padding: 4rem 2rem;
-        color: #64748b;
+        color: var(--text-muted);
     }
     
     .empty-icon {
         width: 80px;
         height: 80px;
-        background: #f3f4f6;
+        background: var(--empty-icon-bg);
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         margin: 0 auto 1rem;
         font-size: 2rem;
-        color: #94a3b8;
+        color: var(--text-muted);
     }
     
     .alert {
@@ -540,9 +683,9 @@
     }
     
     .alert-info {
-        background: #dbeafe;
-        border: 1px solid #bfdbfe;
-        color: #1e40af;
+        background: var(--info-bg);
+        border: 1px solid var(--info-border);
+        color: var(--info-color);
     }
     
     @keyframes spin {
@@ -628,7 +771,7 @@
         <div class="header-content">
             <h1 class="page-title">
                 <div class="package-icon">
-                    <i class="fas fa-cube" style="font-size: 1.75rem;"></i>
+                    <i class="fas fa-cube"></i>
                 </div>
                 {% trans "System Package Manager" %}
             </h1>
@@ -654,15 +797,15 @@
     <div class="tabs-container">
         <!-- Tab Navigation -->
         <div class="modern-tabs">
-            <button class="tab-item active" ng-click="fetchPackages('upgrade')" data-tab="updates">
+            <button type="button" class="tab-item active" ng-click="fetchPackages('upgrade')" data-tab="updates" aria-label="{% trans 'View available updates' %}">
                 <i class="fas fa-sync-alt tab-icon"></i>
                 {% trans "Available Updates" %}
             </button>
-            <button class="tab-item" ng-click="fetchPackages()" data-tab="all">
+            <button type="button" class="tab-item" ng-click="fetchPackages()" data-tab="all" aria-label="{% trans 'View all packages' %}">
                 <i class="fas fa-list tab-icon"></i>
                 {% trans "All Packages" %}
             </button>
-            <button class="tab-item" ng-click="fetchPackages('CyberPanel')" data-tab="cyberpanel">
+            <button type="button" class="tab-item" ng-click="fetchPackages('CyberPanel')" data-tab="cyberpanel" aria-label="{% trans 'View CyberPanel packages' %}">
                 <i class="fas fa-shield-alt tab-icon"></i>
                 {% trans "CyberPanel Packages" %}
             </button>
@@ -675,20 +818,20 @@
                 <div class="search-box">
                     <i class="fas fa-search search-icon"></i>
                     <input type="text" class="search-input" placeholder="{% trans 'Search packages...' %}" 
-                           ng-model="packSearch">
+                           ng-model="packSearch" aria-label="{% trans 'Search packages' %}">
                 </div>
                 
                 <div class="control-group">
                     <select ng-model="recordsToShow" class="select-control" 
-                            ng-change="fetchPackages(currentTab)">
+                            ng-change="fetchPackages(currentTab)" aria-label="{% trans 'Records per page' %}">
                         <option value="10">10 {% trans "per page" %}</option>
                         <option value="50">50 {% trans "per page" %}</option>
                         <option value="100">100 {% trans "per page" %}</option>
                         <option value="500">500 {% trans "per page" %}</option>
                     </select>
                     
-                    <button class="btn btn-success" ng-click="updatePackage('all')" 
-                            ng-show="currentTab === 'upgrade'">
+                    <button type="button" class="btn btn-success" ng-click="updatePackage('all')" 
+                            ng-show="currentTab === 'upgrade'" aria-label="{% trans 'Update all packages' %}">
                         <i class="fas fa-download"></i>
                         {% trans "Update All" %}
                     </button>
@@ -733,24 +876,24 @@
                                 </span>
                             </td>
                             <td>
-                                <a class="lock-toggle" 
-                                   ng-class="{'locked': package.lock == 1, 'unlocked': package.lock == 0}"
-                                   ng-click="lockStatus(package.package, package.lock == 1 ? 1 : 0)"
-                                   title="{$ package.lock == 1 ? 'Package is locked' : 'Package is unlocked' $}">
+                                <button type="button" class="lock-toggle" 
+                                        ng-class="{'locked': package.lock == 1, 'unlocked': package.lock == 0}"
+                                        ng-click="lockStatus(package.package, package.lock == 1 ? 1 : 0)"
+                                        aria-label="{$ package.lock == 1 ? 'Unlock package' : 'Lock package' $}">
                                     <i class="fas" 
                                        ng-class="{'fa-lock': package.lock == 1, 'fa-lock-open': package.lock == 0}"></i>
-                                </a>
+                                </button>
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <button class="btn btn-info btn-sm" 
-                                            ng-click="showPackageDetails(package.package)">
+                                    <button type="button" class="btn btn-info btn-sm" 
+                                            ng-click="showPackageDetails(package.package)" aria-label="{% trans 'View package details' %}">
                                         <i class="fas fa-info-circle"></i>
                                         {% trans "Details" %}
                                     </button>
-                                    <button class="btn btn-primary btn-sm" 
+                                    <button type="button" class="btn btn-primary btn-sm" 
                                             ng-click="showUpdateModal(package.package)"
-                                            ng-show="currentTab === 'upgrade' || currentTab === 'cyberpanel'">
+                                            ng-show="currentTab === 'upgrade' || currentTab === 'cyberpanel'" aria-label="{% trans 'Update package' %}">
                                         <i class="fas fa-download"></i>
                                         {% trans "Update" %}
                                     </button>
@@ -780,7 +923,7 @@
                 <div class="pagination-controls">
                     <span>{% trans "Page:" %}</span>
                     <select ng-model="currentPage" class="page-select" 
-                            ng-change="fetchPackages(currentTab)">
+                            ng-change="fetchPackages(currentTab)" aria-label="{% trans 'Select page' %}">
                         <option ng-repeat="page in pagination" value="{$ $index + 1 $}">
                             {$ $index + 1 $}
                         </option>
@@ -799,7 +942,7 @@
                     <i class="fas fa-info-circle"></i>
                     {% trans "Package Details:" %} {$ selectedPackage $}
                 </h3>
-                <button class="modal-close" ng-click="closeDetails()">
+                <button type="button" class="modal-close" ng-click="closeDetails()" aria-label="{% trans 'Close details modal' %}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -816,9 +959,9 @@
                 <h3 class="modal-title">
                     <i class="fas fa-download"></i>
                     {% trans "Updating Package:" %} {$ updatingPackage $}
-                    <span ng-hide="cyberpanelLoading" class="loading-spinner" style="margin-left: 1rem;"></span>
+                    <span ng-hide="cyberpanelLoading" class="loading-spinner loading-spinner-inline"></span>
                 </h3>
-                <button class="modal-close" ng-click="closeUpdate()" ng-disabled="!updateComplete">
+                <button type="button" class="modal-close" ng-click="closeUpdate()" ng-disabled="!updateComplete" aria-label="{% trans 'Close update modal' %}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
